@@ -116,7 +116,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 | `KEY_PASS` | key 密码，通常同上 |
 | `KEY_ALIAS` | key 别名（本地默认 `phonebox`） |
 
-**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`，填写与 Manifest `versionName` 一致的标签（当前代码为 `v0.7.0`），运行工作流。工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
+**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`。发布标签可留空，工作流会自动使用 Manifest 的 `versionName` 加 `v` 前缀（当前为 `v0.7.0`）；也可手动填写匹配的标签。运行后工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
 
 ```sh
 # 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交
