@@ -198,6 +198,13 @@ public final class WebPanel {
                 }
                 return Http.Resp.json(200, o.toString());
             }
+            if (post && "/api/ddns/run".equals(req.path)) {
+                Ddns.Result r = Ddns.run(ctx, true);
+                ServiceState.setDdns(r);
+                Logs.add("DDNS 手动更新" + (r.ok ? "：" + r.message : "失败：" + r.message)
+                        + (r.ip.length() > 0 ? "（" + r.ip + "）" : ""));
+                return Http.Resp.json(200, r.toJson().toString());
+            }
             if (post && "/api/rules/test".equals(req.path)) {
                 return testRules(cfg, req);
             }
@@ -388,6 +395,21 @@ public final class WebPanel {
             if (cfg.monitorEnabled()) {
                 o.put("monitor", Monitor.snapshot(ctx));
             }
+
+            JSONObject ddns = new JSONObject();
+            ddns.put("enabled", cfg.ddnsEnabled());
+            ddns.put("family", cfg.ddnsFamily());
+            ddns.put("intervalMin", cfg.ddnsIntervalMin());
+            ddns.put("records", cfg.ddnsRecords().size());
+            ddns.put("ran", ServiceState.ddnsRan);
+            ddns.put("ok", ServiceState.ddnsOk);
+            ddns.put("ip", ServiceState.ddnsIp);
+            ddns.put("message", ServiceState.ddnsMessage);
+            ddns.put("warning", ServiceState.ddnsWarning);
+            ddns.put("at", ServiceState.ddnsAt);
+            ddns.put("updated", ServiceState.ddnsUpdated);
+            ddns.put("unchanged", ServiceState.ddnsUnchanged);
+            o.put("ddns", ddns);
 
             JSONObject config = new JSONObject();
             JSONObject web = new JSONObject();

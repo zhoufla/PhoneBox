@@ -66,11 +66,13 @@
   "ddns": {
     "enabled": false,
     "provider": "cloudflare",
-    "token": "",
-    "zone": "",
+    "token": "在面板填写，建议只给 Zone:DNS:Edit",
+    "zone": "example.com",
     "intervalMin": 10,
     "family": "v6",
-    "records": []
+    "records": [
+      {"name": "home.example.com", "ttl": 120, "proxied": false}
+    ]
   },
   "monitor": {
     "enabled": true

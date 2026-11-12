@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
@@ -91,6 +91,12 @@ Content-Type: application/json
       "ipv4": ["192.168.1.23"], "ipv6": ["240e:..."],
       "rxBytes": 3221225472, "txBytes": 536870912
     }
+  },
+  "ddns": {
+    "enabled": true, "family": "v6", "intervalMin": 10, "records": 1,
+    "ran": true, "ok": true, "ip": "240e:...",
+    "message": "已更新 1 条记录", "warning": "",
+    "at": 1760000000000, "updated": 1, "unchanged": 0
   },
   "config": {"web": {"port": 8080, "user": "admin"}}
 }
@@ -213,6 +219,54 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 {"drop":false,"rule":"验证码优先","matched":["验证码优先"],
  "targets":["dingtalk"],"code":"123456"}
 ```
+
+## DDNS
+
+### `POST /api/ddns/run`
+
+立即执行一次 Cloudflare 同步，用于保存配置后测试（即使 `ddns.enabled=false` 也会执行）：
+
+```json
+{
+  "ok": true,
+  "skipped": false,
+  "ip": "240e:...",
+  "family": "v6",
+  "message": "已更新 1 条记录",
+  "warning": "",
+  "at": 1760000000000,
+  "updated": 1,
+  "unchanged": 0,
+  "details": ["home.example.com 已更新 240e:... → 240e:..."]
+}
+```
+
+失败时 `ok=false`，`message` 给出原因（Token 无权限、Zone 不存在、取不到 IPv6 等），
+`details` 保留每条记录的结果。同步串行执行，自动检查与手动点击不会并发写 Cloudflare。
+
+配置在 `POST /api/config` 的 `ddns` 字段：
+
+```json
+{
+  "ddns": {
+    "enabled": true,
+    "provider": "cloudflare",
+    "token": "留空或 ****** 表示不改",
+    "zone": "example.com 或 32 位 Zone ID",
+    "intervalMin": 10,
+    "family": "v6",
+    "records": [
+      {"name": "home.example.com", "ttl": 120, "proxied": false}
+    ]
+  }
+}
+```
+
+- `family=v6` 写 AAAA，`v4` 写 A。记录数组也接受纯字符串，会被规范成对象。
+- 地址优先取 `wlan*`，其次 `eth*`；IPv6 跳过链路本地和 `fc00::/7`。
+- 地址与 Cloudflare 现有记录一致时不调用写接口，只计数 `unchanged`。
+- IPv4 为内网/CGNAT 时仍会更新，但返回 `warning` 提示无法公网直达。
+- Token 只需要 `Zone:DNS:Edit`，建议再限定到单个 Zone；IPv6 直连保持 `proxied=false`。
 
 ## 日志
 

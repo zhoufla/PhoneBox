@@ -185,8 +185,8 @@ public final class MainActivity extends Activity {
         });
 
         TextView note = body(
-                "M1：短信接收 / 规则转发 / 网页发短信已接入，支持 Webhook、钉钉、Telegram。\n"
-                        + "系统监控和 Cloudflare DDNS 将在后续版本接入。\n\n"
+                "短信接收 / 规则转发 / 网页发短信 / 系统监控 / Cloudflare DDNS 已接入。\n"
+                        + "保活加固将在后续版本继续完善。\n\n"
                         + "无 root 无法对抗 MIUI 强制停止。请打开自启动、省电策略选“无限制”、"
                         + "在最近任务里锁定本应用，并且不要点“强行停止”。",
                 12, Color.rgb(120, 120, 120));

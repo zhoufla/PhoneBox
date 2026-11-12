@@ -111,6 +111,66 @@ public final class AppConfig {
         return monitor == null || monitor.optBoolean("enabled", true);
     }
 
+    // ---------- DDNS ----------
+
+    public synchronized boolean ddnsEnabled() {
+        JSONObject ddns = data.optJSONObject("ddns");
+        return ddns != null && ddns.optBoolean("enabled", false);
+    }
+
+    public synchronized String ddnsToken() {
+        JSONObject ddns = data.optJSONObject("ddns");
+        return ddns == null ? "" : ddns.optString("token", "");
+    }
+
+    public synchronized String ddnsZone() {
+        JSONObject ddns = data.optJSONObject("ddns");
+        return ddns == null ? "" : ddns.optString("zone", "");
+    }
+
+    public synchronized int ddnsIntervalMin() {
+        JSONObject ddns = data.optJSONObject("ddns");
+        int v = ddns == null ? 10 : ddns.optInt("intervalMin", 10);
+        return Math.max(1, Math.min(1440, v));
+    }
+
+    public synchronized String ddnsFamily() {
+        JSONObject ddns = data.optJSONObject("ddns");
+        return ddns != null && "v4".equals(ddns.optString("family", "v6")) ? "v4" : "v6";
+    }
+
+    public synchronized List<Ddns.Rec> ddnsRecords() {
+        List<Ddns.Rec> out = new ArrayList<Ddns.Rec>();
+        JSONObject ddns = data.optJSONObject("ddns");
+        JSONArray arr = ddns == null ? null : ddns.optJSONArray("records");
+        if (arr == null) {
+            return out;
+        }
+        for (int i = 0; i < arr.length() && out.size() < Ddns.maxRecords(); i++) {
+            Object raw = arr.opt(i);
+            String name = "";
+            boolean proxied = false;
+            int ttl = 120;
+            if (raw instanceof String) {
+                name = ((String) raw).trim();
+            } else if (raw instanceof JSONObject) {
+                JSONObject o = (JSONObject) raw;
+                name = o.optString("name", "").trim();
+                proxied = o.optBoolean("proxied", false);
+                ttl = o.optInt("ttl", 120);
+            }
+            if (name.length() == 0) {
+                continue;
+            }
+            Ddns.Rec rec = new Ddns.Rec();
+            rec.name = name;
+            rec.proxied = proxied;
+            rec.ttl = Ddns.clampTtl(ttl);
+            out.add(rec);
+        }
+        return out;
+    }
+
     public synchronized List<Channel> channels() {
         List<Channel> out = new ArrayList<Channel>();
         JSONArray arr = data.optJSONArray("channels");
@@ -292,7 +352,7 @@ public final class AppConfig {
                 cur.put("family", "v4".equals(ddns.optString("family")) ? "v4" : "v6");
                 keepSecret(cur, ddns, "token");
                 if (ddns.has("records")) {
-                    cur.put("records", ddns.optJSONArray("records"));
+                    cur.put("records", sanitizeRecords(ddns.optJSONArray("records")));
                 }
             }
 
@@ -376,6 +436,52 @@ public final class AppConfig {
                 c.token = old == null ? "" : old.token;
             }
             out.put(c.toJson());
+        }
+        return out;
+    }
+
+    /** DDNS 记录：字符串或对象都接受，统一存成 {name,ttl,proxied}。 */
+    private static JSONArray sanitizeRecords(JSONArray arr) {
+        JSONArray out = new JSONArray();
+        if (arr == null) {
+            return out;
+        }
+        if (arr.length() > Ddns.maxRecords()) {
+            throw new IllegalArgumentException("DDNS 记录最多 " + Ddns.maxRecords() + " 条");
+        }
+        Set<String> names = new LinkedHashSet<String>();
+        for (int i = 0; i < arr.length(); i++) {
+            Object raw = arr.opt(i);
+            String name = "";
+            boolean proxied = false;
+            int ttl = 120;
+            if (raw instanceof String) {
+                name = ((String) raw).trim();
+            } else if (raw instanceof JSONObject) {
+                JSONObject o = (JSONObject) raw;
+                name = o.optString("name", "").trim();
+                proxied = o.optBoolean("proxied", false);
+                ttl = Ddns.clampTtl(o.optInt("ttl", 120));
+            } else {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 条 DDNS 记录必须是字符串或对象");
+            }
+            if (name.length() == 0) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 条 DDNS 记录缺少 name");
+            }
+            if (name.matches(".*\\s+.*")) {
+                throw new IllegalArgumentException("DDNS 记录名不能包含空白：" + name);
+            }
+            if (!names.add(name)) {
+                throw new IllegalArgumentException("DDNS 记录重复：" + name);
+            }
+            try {
+                JSONObject item = new JSONObject();
+                item.put("name", name);
+                item.put("ttl", ttl);
+                item.put("proxied", proxied);
+                out.put(item);
+            } catch (JSONException ignored) {
+            }
         }
         return out;
     }

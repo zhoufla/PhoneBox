@@ -164,6 +164,7 @@
     <button data-tab="send">发送</button>
     <button data-tab="channels">通道</button>
     <button data-tab="rules">规则</button>
+    <button data-tab="ddns">DDNS</button>
     <button data-tab="logs">日志</button>
     <button data-tab="settings">设置</button>
   </nav>
@@ -290,6 +291,47 @@
         <label>正文<textarea id="testBody" placeholder="【示例】验证码 123456，5 分钟内有效"></textarea></label>
         <button id="runTest" type="button">测试匹配</button>
         <pre id="testResult" class="logs hidden"></pre>
+      </article>
+    </div>
+  </section>
+
+  <!-- DDNS -->
+  <section id="tab-ddns" class="hidden">
+    <div class="grid">
+      <article class="card wide">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <h2>Cloudflare DDNS</h2>
+          <button class="small" id="ddnsRun" style="margin-top:0;">立即更新</button>
+        </div>
+        <div class="muted small">
+          把 WiFi 获取的公网 IPv6 同步到 Cloudflare AAAA 记录；地址未变化不会调用写接口。
+          IPv4 若为内网或 CGNAT，只能提示，无法直接公网访问。
+        </div>
+        <ul id="ddnsStatus" class="list"><li class="muted">尚未运行</li></ul>
+        <pre id="ddnsResult" class="logs hidden"></pre>
+      </article>
+
+      <article class="card wide">
+        <h2>DDNS 设置</h2>
+        <form id="ddnsForm">
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="ddnsEnabled" type="checkbox" style="width:auto;margin:0;"> 启用自动更新
+          </label>
+          <div class="row">
+            <label>地址族<select id="ddnsFamily">
+              <option value="v6">IPv6（AAAA）</option>
+              <option value="v4">IPv4（A）</option>
+            </select></label>
+            <label>检查间隔（分钟）<input id="ddnsInterval" type="number" min="1" max="1440"></label>
+          </div>
+          <label>Zone 名称或 ID<input id="ddnsZone" autocomplete="off" placeholder="example.com 或 32 位 Zone ID"></label>
+          <label>API Token<input id="ddnsToken" type="password" autocomplete="new-password" placeholder="留空或 ****** 表示不改"></label>
+          <label>记录 JSON<textarea id="ddnsRecords" spellcheck="false" placeholder='[{"name":"home.example.com","ttl":120,"proxied":false}]'></textarea></label>
+          <button class="primary" type="submit">保存 DDNS 设置</button>
+        </form>
+        <div class="muted small" style="margin-top:10px;">
+          Token 建议只授予 Zone:DNS:Edit 并限定单个 Zone。IPv6 直连请保持 DNS-only（proxied=false）。
+        </div>
       </article>
     </div>
   </section>
@@ -483,6 +525,7 @@
 
       renderAddresses(d.addresses || []);
       renderMonitor(d.monitor);
+      renderDdns(d.ddns);
       $("channelSummary").textContent = (sms.channels && sms.channels.length)
         ? sms.channels.join(" · ") : "未配置通道";
       $("version").textContent = d.version || "—";
@@ -648,6 +691,88 @@
     });
   }
 
+  // ---------- DDNS ----------
+
+  function fmtClock(ms) {
+    if (!ms) return "—";
+    try { return new Date(ms).toLocaleString(); } catch (e) { return "—"; }
+  }
+
+  function renderDdns(d) {
+    var box = $("ddnsStatus");
+    box.textContent = "";
+    if (!d) {
+      box.appendChild(el("li", "muted", "正在读取…"));
+      return;
+    }
+    var state;
+    if (!d.enabled) state = "未启用";
+    else if (!d.ran) state = "等待首次检查";
+    else state = d.ok ? "正常" : "失败";
+    var rows = [
+      ["状态", state],
+      ["当前地址", d.ip || "—"],
+      ["记录", (d.records || 0) + " 条 · 更新 " + (d.updated || 0)
+        + " / 未变化 " + (d.unchanged || 0)],
+      ["最近检查", fmtClock(d.at)],
+      ["消息", d.message || "—"]
+    ];
+    if (d.warning) rows.push(["提示", d.warning]);
+    rows.forEach(function (r) {
+      var li = el("li");
+      li.appendChild(el("span", "muted", r[0]));
+      li.appendChild(el("span", "mval mono", r[1]));
+      box.appendChild(li);
+    });
+  }
+
+  function fillDdns(ddns) {
+    var d = ddns || {};
+    $("ddnsEnabled").checked = d.enabled === true;
+    $("ddnsFamily").value = d.family === "v4" ? "v4" : "v6";
+    $("ddnsInterval").value = d.intervalMin == null ? 10 : d.intervalMin;
+    $("ddnsZone").value = d.zone || "";
+    $("ddnsToken").value = d.token || "";
+    $("ddnsRecords").value = JSON.stringify(d.records || [], null, 2);
+  }
+
+  function saveDdns(ev) {
+    ev.preventDefault();
+    var records;
+    try { records = JSON.parse($("ddnsRecords").value || "[]"); }
+    catch (e) { showError("记录 JSON 格式错误：" + e.message); return; }
+    api("/api/config", {
+      method: "POST",
+      body: {
+        ddns: {
+          enabled: $("ddnsEnabled").checked,
+          family: $("ddnsFamily").value,
+          intervalMin: Number($("ddnsInterval").value),
+          zone: $("ddnsZone").value.trim(),
+          token: $("ddnsToken").value,
+          records: records
+        }
+      }
+    }).then(function () { showOk("DDNS 设置已保存"); return loadConfig(); })
+      .catch(function (e) { showError(e.message); });
+  }
+
+  function runDdns() {
+    var btn = $("ddnsRun");
+    btn.disabled = true;
+    api("/api/ddns/run", { method: "POST", body: {} })
+      .then(function (r) {
+        var out = $("ddnsResult");
+        out.classList.remove("hidden");
+        out.textContent = JSON.stringify(r, null, 2);
+        if (r.ok) showOk("DDNS：" + r.message + (r.ip ? " · " + r.ip : ""));
+        else showError("DDNS 失败：" + r.message);
+        return refreshStatus();
+      })
+      .catch(function (e) { showError(e.message); })
+      .then(function () { btn.disabled = false; });
+  }
+
   // ---------- 短信 ----------
 
   function deliveryTag(d) {
@@ -735,6 +860,7 @@
       renderChannels();
       renderRules();
       fillSettings(c);
+      fillDdns(c.ddns);
     });
   }
 
@@ -916,6 +1042,7 @@
     send: loadOutbox,
     channels: loadConfig,
     rules: loadConfig,
+    ddns: function () { return loadConfig().then(function () { return refreshStatus(); }); },
     logs: loadLogs,
     settings: loadConfig
   };
@@ -924,7 +1051,7 @@
     document.querySelectorAll(".tabs button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === name);
     });
-    ["overview", "messages", "send", "channels", "rules", "logs", "settings"].forEach(function (t) {
+    ["overview", "messages", "send", "channels", "rules", "ddns", "logs", "settings"].forEach(function (t) {
       $("tab-" + t).classList.toggle("hidden", t !== name);
     });
     showError("");
@@ -956,6 +1083,8 @@
   $("saveRules").addEventListener("click", saveRules);
   $("runTest").addEventListener("click", testRules);
   $("settingsForm").addEventListener("submit", saveSettings);
+  $("ddnsForm").addEventListener("submit", saveDdns);
+  $("ddnsRun").addEventListener("click", runDdns);
 
   $("sendForm").addEventListener("submit", function (ev) {
     ev.preventDefault();

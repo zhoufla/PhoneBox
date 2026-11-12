@@ -30,7 +30,14 @@
 - 双卡信号：运营商、网络制式、等级、dBm
 - CPU 核数、占用率、负载、当前频率；内存、数据分区、网络类型与流量
 
-Cloudflare DDNS（M4）和保活加固（M5）在后续阶段接入。
+**M4 Cloudflare DDNS**：
+
+- WiFi 公网 IPv6 优先，自动枚举网卡，跳过链路本地和 ULA
+- 定时同步 AAAA（或 A）记录，地址未变化不调用写接口
+- 失败发系统通知并写入面板；支持手动“立即更新”
+- Token 只保存在应用私有配置，面板接口永远返回 `******`
+
+保活加固（M5）在后续阶段接入。
 
 ## 目标平台
 
@@ -77,7 +84,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.3.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.4.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -139,6 +146,7 @@ phone-box/
 │   ├── SmsReceiver.java
 │   ├── SmsInbox.java
 │   ├── Monitor.java
+│   ├── Ddns.java
 │   ├── SmsSender.java
 │   ├── SendReceiver.java
 │   ├── Db.java

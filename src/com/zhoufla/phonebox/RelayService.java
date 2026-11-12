@@ -24,10 +24,15 @@ public final class RelayService extends Service {
     public static final String ACTION_STOP = "com.zhoufla.phonebox.STOP";
 
     private static final String CHANNEL_ID = "phonebox_service";
+    private static final String CHANNEL_ALERT = "phonebox_alert";
     private static final int NOTIFY_ID = 1001;
+    private static final int DDNS_NOTIFY_ID = 1002;
 
     private final Object lock = new Object();
     private volatile boolean running = false;
+    private volatile long lastDdnsAt = 0;
+    private volatile boolean ddnsRunning = false;
+    private volatile boolean ddnsFailing = false;
 
     private Handler handler;
     private NotificationManager notificationManager;
@@ -188,6 +193,8 @@ public final class RelayService extends Service {
                     }
                     db.prune(days);
                 }
+
+                maybeDdns(cfg);
             } catch (Throwable t) {
                 Logs.add("投递循环异常：" + t);
             }
@@ -253,6 +260,98 @@ public final class RelayService extends Service {
         }
     }
 
+    // ---------- DDNS ----------
+
+    /** 到点就在独立线程跑一次，避免 Cloudflare 网络超时阻塞短信投递。 */
+    private void maybeDdns(AppConfig cfg) {
+        if (!cfg.ddnsEnabled()) {
+            if (ddnsFailing) {
+                ddnsFailing = false;
+                cancelDdnsNotice();
+            }
+            return;
+        }
+        if (ddnsRunning) {
+            return;
+        }
+        long interval = cfg.ddnsIntervalMin() * 60000L;
+        long now = System.currentTimeMillis();
+        if (lastDdnsAt > 0 && now - lastDdnsAt < interval) {
+            return;
+        }
+        lastDdnsAt = now;
+        ddnsRunning = true;
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Ddns.Result r = Ddns.run(RelayService.this, false);
+                    ServiceState.setDdns(r);
+                    if (r.skipped) {
+                        return;
+                    }
+                    if (r.ok) {
+                        if (ddnsFailing) {
+                            ddnsFailing = false;
+                            cancelDdnsNotice();
+                        }
+                        if (r.updated > 0) {
+                            Logs.add("DDNS 已更新 " + r.updated + " 条 → " + r.ip);
+                        }
+                    } else {
+                        Logs.add("DDNS 失败：" + r.message);
+                        if (!ddnsFailing) {
+                            ddnsFailing = true;
+                            notifyDdns(r.message);
+                        }
+                    }
+                } catch (Throwable t) {
+                    Logs.add("DDNS 异常：" + t);
+                } finally {
+                    ddnsRunning = false;
+                }
+            }
+        }, "phonebox-ddns");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void notifyDdns(String text) {
+        if (notificationManager == null) {
+            return;
+        }
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openIntent = PendingIntent.getActivity(this, 2, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= 26) {
+            builder = new Notification.Builder(this, CHANNEL_ALERT);
+        } else {
+            builder = new Notification.Builder(this);
+        }
+        builder.setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle("DDNS 更新失败")
+                .setContentText(text == null ? "" : text)
+                .setStyle(new Notification.BigTextStyle().bigText(text == null ? "" : text))
+                .setAutoCancel(true)
+                .setContentIntent(openIntent);
+        try {
+            notificationManager.notify(DDNS_NOTIFY_ID, builder.build());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void cancelDdnsNotice() {
+        try {
+            if (notificationManager != null) {
+                notificationManager.cancel(DDNS_NOTIFY_ID);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     // ---------- 通知 ----------
 
     private void createChannel() {
@@ -263,6 +362,13 @@ public final class RelayService extends Service {
             channel.setShowBadge(false);
             if (notificationManager != null) {
                 notificationManager.createNotificationChannel(channel);
+            }
+            NotificationChannel alert = new NotificationChannel(
+                    CHANNEL_ALERT, "异常告警", NotificationManager.IMPORTANCE_DEFAULT);
+            alert.setDescription("DDNS 更新失败等需要处理的异常");
+            alert.setShowBadge(true);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(alert);
             }
         }
     }

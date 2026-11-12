@@ -12,7 +12,31 @@ public final class ServiceState {
     public static volatile int panelPort = 0;
     public static volatile String panelError = "";
 
+    // DDNS 最近一次结果（进程内）
+    public static volatile boolean ddnsRan = false;
+    public static volatile boolean ddnsOk = false;
+    public static volatile String ddnsIp = "";
+    public static volatile String ddnsMessage = "";
+    public static volatile String ddnsWarning = "";
+    public static volatile long ddnsAt = 0;
+    public static volatile int ddnsUpdated = 0;
+    public static volatile int ddnsUnchanged = 0;
+
     private ServiceState() {
+    }
+
+    public static void setDdns(Ddns.Result r) {
+        if (r == null) {
+            return;
+        }
+        ddnsRan = true;
+        ddnsOk = r.ok;
+        ddnsIp = r.ip == null ? "" : r.ip;
+        ddnsMessage = r.message == null ? "" : r.message;
+        ddnsWarning = r.warning == null ? "" : r.warning;
+        ddnsAt = r.at;
+        ddnsUpdated = r.updated;
+        ddnsUnchanged = r.unchanged;
     }
 
     public static long uptimeSec() {
