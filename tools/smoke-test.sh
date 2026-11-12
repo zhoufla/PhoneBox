@@ -65,6 +65,26 @@ echo "== 面板在线更新状态（只读取，不触发下载/安装）"
 curl -fsS -u "$AUTH" "$BASE/api/update/status"
 echo
 
+echo "== 手动安装包状态（只读取）"
+curl -fsS -u "$AUTH" "$BASE/api/local-update/status"
+echo
+
+echo "== 文件收件箱（只读取）"
+curl -fsS -u "$AUTH" "$BASE/api/files"
+echo
+
+echo "== 便签（写入 → 读取 → 删除临时条目）"
+NOTE=$(curl -fsS -u "$AUTH" -H "$H" -H 'Content-Type: application/json' \
+    -d '{"text":"PhoneBox 冒烟测试便签","from":"pc"}' "$BASE/api/notes")
+echo "$NOTE"
+NOTE_ID=$(echo "$NOTE" | python3 -c \
+    'import sys,json; print(json.load(sys.stdin).get("item",{}).get("id",""))')
+if [ -n "$NOTE_ID" ]; then
+    curl -fsS -u "$AUTH" -H "$H" -H 'Content-Type: application/json' \
+        -d "{\"id\":\"$NOTE_ID\"}" "$BASE/api/notes/delete"
+    echo
+fi
+
 echo "== manifest（无需认证）"
 curl -fsS "$BASE/manifest.webmanifest" | head -5
 

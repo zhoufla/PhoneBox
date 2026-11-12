@@ -1,12 +1,8 @@
 package com.zhoufla.phonebox;
 
-import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageInfo;
-import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 
 import org.json.JSONArray;
@@ -228,49 +224,10 @@ public final class GithubUpdater {
         if (archiveCode != expectedCode) {
             throw new SecurityException("APK 版本码与 Release 清单不一致");
         }
-
-        PackageInstaller installer = pm.getPackageInstaller();
-        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
-                PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-        params.setAppPackageName(context.getPackageName());
-        if (Build.VERSION.SDK_INT >= 31) {
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
-        }
-        int sessionId = installer.createSession(params);
-        boolean committed = false;
         try {
-            PackageInstaller.Session session = installer.openSession(sessionId);
-            InputStream in = new FileInputStream(apk);
-            OutputStream out = session.openWrite("base.apk", 0, apk.length());
-            try {
-                byte[] buffer = new byte[8192];
-                int n;
-                while ((n = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, n);
-                }
-                session.fsync(out);
-            } finally {
-                try { in.close(); } catch (Exception ignored) { }
-                try { out.close(); } catch (Exception ignored) { }
-            }
-
-            Intent status = new Intent(context, UpdateInstallReceiver.class);
-            status.setAction("com.zhoufla.phonebox.UPDATE_INSTALL_STATUS");
-            status.setData(Uri.parse("phonebox://install/" + sessionId));
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= 31) {
-                // PackageInstaller 必须能把状态码和确认 Intent 填入回调。
-                flags |= PendingIntent.FLAG_MUTABLE;
-            }
-            PendingIntent pending = PendingIntent.getBroadcast(context, sessionId, status, flags);
-            session.commit(pending.getIntentSender());
-            session.close();
-            committed = true;
-            return sessionId;
+            return ApkInstaller.commit(context, apk, UpdateInstallReceiver.class,
+                    "com.zhoufla.phonebox.UPDATE_INSTALL_STATUS", "phonebox://install/");
         } finally {
-            if (!committed) {
-                try { installer.abandonSession(sessionId); } catch (Exception ignored) { }
-            }
             //noinspection ResultOfMethodCallIgnored
             apk.delete();
         }
@@ -286,6 +243,10 @@ public final class GithubUpdater {
             connection.setRequestProperty("User-Agent", "PhoneBox-Updater/1");
             connection.setRequestProperty("Accept", "application/vnd.github+json");
             int code = connection.getResponseCode();
+            if (code == 403 || code == 429) {
+                throw new IllegalStateException("GitHub API 限流（HTTP " + code
+                        + "），请改用手动上传安装包");
+            }
             if (code < 200 || code >= 300) {
                 throw new IllegalStateException("访问 GitHub 失败（HTTP " + code + "）");
             }

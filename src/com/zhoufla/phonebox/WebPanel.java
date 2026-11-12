@@ -11,6 +11,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -52,7 +53,7 @@ public final class WebPanel {
             public Http.Resp serve(Http.Req req) throws Exception {
                 return route(ctx, cfg, req);
             }
-        });
+        }, ctx.getCacheDir());
         try {
             server.start();
             http = server;
@@ -69,7 +70,7 @@ public final class WebPanel {
                     public Http.Resp serve(Http.Req req) throws Exception {
                         return route(ctx, cfg, req);
                     }
-                });
+                }, ctx.getCacheDir());
                 try {
                     fallback.start();
                     http = fallback;
@@ -168,6 +169,18 @@ public final class WebPanel {
             if (get && "/api/update/status".equals(req.path)) {
                 return Http.Resp.json(200, PanelUpdater.status().toString());
             }
+            if (get && "/api/local-update/status".equals(req.path)) {
+                return Http.Resp.json(200, LocalUpdater.status().toString());
+            }
+            if (get && "/api/files".equals(req.path)) {
+                return Http.Resp.json(200, WebFiles.list(ctx).toString());
+            }
+            if (get && "/api/files/download".equals(req.path)) {
+                return fileDownload(ctx, req);
+            }
+            if (get && "/api/notes".equals(req.path)) {
+                return Http.Resp.json(200, Notes.list(ctx).toString());
+            }
             if (get && "/api/config".equals(req.path)) {
                 return Http.Resp.json(200, cfg.publicJson().toString());
             }
@@ -250,6 +263,33 @@ public final class WebPanel {
             }
             if (post && "/api/update/install".equals(req.path)) {
                 return Http.Resp.json(200, PanelUpdater.startInstall(ctx).toString());
+            }
+            if (post && "/api/files/upload".equals(req.path)) {
+                return upload(ctx, cfg, req);
+            }
+            if (post && "/api/files/delete".equals(req.path)) {
+                return fileDelete(ctx, req);
+            }
+            if (post && "/api/local-update/install".equals(req.path)) {
+                return Http.Resp.json(200, LocalUpdater.startInstall(ctx).toString());
+            }
+            if (post && "/api/local-update/clear".equals(req.path)) {
+                LocalUpdater.clear(ctx);
+                JSONObject o = new JSONObject();
+                o.put("ok", true);
+                return Http.Resp.json(200, o.toString());
+            }
+            if (post && "/api/notes".equals(req.path)) {
+                return noteAdd(ctx, cfg, req);
+            }
+            if (post && "/api/notes/delete".equals(req.path)) {
+                return noteDelete(ctx, req);
+            }
+            if (post && "/api/notes/clear".equals(req.path)) {
+                JSONObject o = new JSONObject();
+                o.put("ok", true);
+                o.put("removed", Notes.clear(ctx));
+                return Http.Resp.json(200, o.toString());
             }
             if (post && "/api/config".equals(req.path)) {
                 return saveConfig(ctx, cfg, req);
@@ -363,6 +403,90 @@ public final class WebPanel {
     private static Http.Resp testAlert(Context ctx, Http.Req req) throws Exception {
         String text = new JSONObject(req.body).optString("message", "").trim();
         return Http.Resp.json(200, Alert.fireTest(ctx, text).toString());
+    }
+
+    // ---------- 文件与便签 ----------
+
+    private static Http.Resp upload(Context ctx, AppConfig cfg, Http.Req req) throws Exception {
+        if (!cfg.transferEnabled()) {
+            return err(403, "文件上传已在配置中关闭");
+        }
+        if (req.uploadFile == null) {
+            return err(400, "缺少文件内容（Content-Type 需为 application/octet-stream）");
+        }
+        String name = req.q("name", "upload.bin");
+        String kind = req.q("kind", "file");
+        try {
+            if ("apk".equals(kind)) {
+                if (!cfg.transferAllowInstall()) {
+                    return err(403, "手动安装已在配置中关闭");
+                }
+                return Http.Resp.json(200, LocalUpdater.stage(ctx, req.uploadFile, name).toString());
+            }
+            JSONObject r = WebFiles.save(ctx, req.uploadFile, name, kind,
+                    cfg.transferMaxBytes(), cfg.transferMaxTotal(), cfg.transferKeepDays());
+            JSONObject item = r.optJSONObject("item");
+            Logs.add("面板上传文件：" + (item == null ? name : item.optString("name")));
+            return Http.Resp.json(200, r.toString());
+        } catch (SecurityException e) {
+            return err(400, e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return err(400, e.getMessage());
+        }
+    }
+
+    private static Http.Resp fileDownload(Context ctx, Http.Req req) throws Exception {
+        String id = req.q("id", "");
+        JSONObject item = WebFiles.find(ctx, id);
+        if (item == null) {
+            return err(404, "文件不存在");
+        }
+        InputStream in = WebFiles.open(ctx, item);
+        if (in == null) {
+            return err(404, "文件已被移动或删除");
+        }
+        String name = item.optString("name", "file");
+        Http.Resp r = new Http.Resp();
+        r.contentType = item.optString("mime", "application/octet-stream");
+        r.stream = in;
+        r.streamLength = item.optLong("size", 0);
+        r.headers.put("Content-Disposition", "attachment; filename=\""
+                + asciiName(name) + "\"; filename*=UTF-8''"
+                + URLEncoder.encode(name, "UTF-8"));
+        return r;
+    }
+
+    private static Http.Resp fileDelete(Context ctx, Http.Req req) throws Exception {
+        String id = new JSONObject(req.body).optString("id", "");
+        boolean removed = WebFiles.delete(ctx, id);
+        JSONObject o = new JSONObject();
+        o.put("ok", removed);
+        if (!removed) {
+            o.put("warning", "文件不存在或已删除");
+        }
+        return Http.Resp.json(200, o.toString());
+    }
+
+    private static Http.Resp noteAdd(Context ctx, AppConfig cfg, Http.Req req) throws Exception {
+        JSONObject body = new JSONObject(req.body);
+        return Http.Resp.json(200, Notes.add(ctx, body.optString("text", ""),
+                body.optString("from", "pc"), cfg.notesMaxItems()).toString());
+    }
+
+    private static Http.Resp noteDelete(Context ctx, Http.Req req) throws Exception {
+        String id = new JSONObject(req.body).optString("id", "");
+        JSONObject o = new JSONObject();
+        o.put("ok", Notes.delete(ctx, id));
+        return Http.Resp.json(200, o.toString());
+    }
+
+    private static String asciiName(String name) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < name.length() && sb.length() < 100; i++) {
+            char c = name.charAt(i);
+            sb.append(c >= 32 && c < 127 && c != '"' && c != '\\' ? c : '_');
+        }
+        return sb.length() == 0 ? "file" : sb.toString();
     }
 
     private static Http.Resp saveConfig(Context ctx, AppConfig cfg, Http.Req req)

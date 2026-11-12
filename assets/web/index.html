@@ -146,6 +146,18 @@
     font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
     max-height: 420px; overflow: auto;
   }
+  .bar { height: 6px; border-radius: 999px; background: #0f141c; border: 1px solid var(--line); overflow: hidden; margin-top: 10px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .15s linear; }
+  .fileRow { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .fileRow:first-child { border-top: 0; }
+  .fileRow .fmeta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .fileRow .fops { display: flex; gap: 6px; align-items: center; }
+  .fileRow .fops button { margin-top: 0; padding: 3px 8px; font-size: 12px; }
+  .note { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card2); margin-top: 10px; }
+  .note .head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .note .txt { margin-top: 8px; white-space: pre-wrap; word-break: break-word; font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  .note .ops { display: flex; gap: 6px; }
+  .note .ops button { margin-top: 0; padding: 3px 8px; font-size: 12px; }
   .hidden { display: none !important; }
   footer { margin-top: 22px; color: var(--muted); font-size: 12px; line-height: 1.7; }
   @media (max-width: 640px) {
@@ -178,6 +190,7 @@
     <button data-tab="rules">规则</button>
     <button data-tab="ddns">DDNS</button>
     <button data-tab="logs">日志</button>
+    <button data-tab="transfer">传输</button>
     <button data-tab="settings">设置</button>
   </nav>
 
@@ -405,6 +418,40 @@
     </div>
   </section>
 
+  <!-- 传输 -->
+  <section id="tab-transfer" class="hidden">
+    <div class="card wide" style="margin-top:12px;">
+      <h2>文件收件箱</h2>
+      <div class="muted small">
+        上传后直接保存到手机「下载/PhoneBox」目录，文件管理器里可见；单文件默认上限 30 MB，超出配额时自动清理最旧的文件。
+      </div>
+      <div class="row" style="margin-top:12px;align-items:end;">
+        <label>选择文件<input id="filePick" type="file"></label>
+        <div>
+          <button type="button" class="primary" id="fileUpload" style="margin-top:0;">上传到手机</button>
+          <button type="button" id="fileRefresh" style="margin-left:8px;margin-top:0;">刷新</button>
+        </div>
+      </div>
+      <div class="bar hidden" id="fileBar"><i></i></div>
+      <div id="fileProgress" class="muted small" style="margin-top:8px;"></div>
+      <ul id="fileList" class="list"><li class="muted">正在读取…</li></ul>
+    </div>
+    <div class="card wide" style="margin-top:12px;">
+      <h2>便签 · 电脑 → 手机</h2>
+      <div class="muted small">
+        在电脑上贴一段文本，手机打开这一页就能一键复制；手机也能写，两端共用同一份列表。
+      </div>
+      <label>内容<textarea id="noteText" placeholder="例如验证码、地址、一段配置…"></textarea></label>
+      <div>
+        <button type="button" class="primary" id="noteAdd">添加便签</button>
+        <button type="button" id="noteRefresh" style="margin-left:8px;">刷新</button>
+        <button type="button" class="danger" id="noteClear" style="margin-left:8px;">清空</button>
+      </div>
+      <div class="muted small" id="noteMeta" style="margin-top:8px;"></div>
+      <div id="noteList"></div>
+    </div>
+  </section>
+
   <!-- 设置 -->
   <section id="tab-settings" class="hidden">
     <div class="card wide" style="margin-top:12px;">
@@ -457,6 +504,18 @@
       <div style="margin-top:12px;">
         <button type="button" class="primary" id="updCheck">检查更新</button>
         <button type="button" id="updInstall" style="margin-left:8px;" disabled>下载并安装</button>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">
+        <div class="label">手动上传安装包（GitHub 打不开或 403 时用）</div>
+        <div class="muted small">只接受 PhoneBox 官方签名的包：上传后先校验包名与签名证书，再由你点安装。</div>
+        <div class="row" style="margin-top:10px;align-items:end;">
+          <label>APK 文件<input id="apkPick" type="file" accept=".apk,application/vnd.android.package-archive"></label>
+          <div><button type="button" id="apkUpload" style="margin-top:0;">上传并校验</button></div>
+        </div>
+        <div class="bar hidden" id="apkBar"><i></i></div>
+        <div id="apkProgress" class="muted small" style="margin-top:8px;"></div>
+        <div id="apkInfo" class="muted small" style="margin-top:8px;"></div>
+        <button type="button" class="primary" id="apkInstall" style="margin-top:10px;" disabled>安装这个包</button>
       </div>
     </div>
     <div class="card wide" style="margin-top:12px;">
@@ -1383,6 +1442,239 @@
     }
   }
 
+  // ---------- 传输：文件 ----------
+
+  function xhrUpload(url, file, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.setRequestHeader("X-Requested-With", "phonebox");
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+      };
+      xhr.onload = function () {
+        var data = {};
+        try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
+        catch (err) { data = { error: xhr.responseText }; }
+        if (xhr.status === 401) { reject(new Error("认证失败，请刷新页面重新登录")); return; }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(data.error || ("HTTP " + xhr.status)));
+          return;
+        }
+        resolve(data);
+      };
+      xhr.onerror = function () { reject(new Error("上传失败，连接中断")); };
+      xhr.send(file);
+    });
+  }
+
+  function setBar(id, percent) {
+    var box = $(id);
+    if (!box) return;
+    box.classList.toggle("hidden", percent == null);
+    var fill = box.querySelector("i");
+    if (fill) fill.style.width = (percent == null ? 0 : Math.max(0, Math.min(100, percent))) + "%";
+  }
+
+  function timeText(ts) {
+    if (!ts) return "—";
+    var d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return "—";
+    var p = function (n) { return n < 10 ? "0" + n : "" + n; };
+    return (d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
+  function loadFiles() {
+    return api("/api/files").then(renderFiles);
+  }
+
+  function renderFiles(d) {
+    var box = $("fileList");
+    box.innerHTML = "";
+    var items = (d && d.items) || [];
+    if (!items.length) {
+      box.appendChild(el("li", "muted", "还没有文件。选一个文件上传试试。"));
+      return;
+    }
+    items.forEach(function (it) {
+      var row = el("div", "fileRow");
+      var left = el("div");
+      left.appendChild(el("div", null, it.name || "file"));
+      left.appendChild(el("div", "fmeta", bytesText(it.size || 0) + " · " + timeText(it.ts)
+        + " · 下载/" + (it.relPath || "PhoneBox")));
+      var ops = el("div", "fops");
+      var dl = el("button", "small", "下载");
+      dl.addEventListener("click", function () {
+        window.location.href = "/api/files/download?id=" + encodeURIComponent(it.id);
+      });
+      var del = el("button", "small danger", "删除");
+      del.addEventListener("click", function () {
+        if (!confirm("删除手机上的「" + (it.name || "file") + "」？")) return;
+        api("/api/files/delete", { method: "POST", body: { id: it.id } })
+          .then(function () { showOk("已删除"); return loadFiles(); })
+          .catch(function (e) { showError(e.message); });
+      });
+      ops.appendChild(dl);
+      ops.appendChild(del);
+      row.appendChild(left);
+      row.appendChild(ops);
+      box.appendChild(row);
+    });
+  }
+
+  function uploadFile() {
+    var input = $("filePick");
+    var file = input.files && input.files[0];
+    if (!file) { showError("请先选择文件"); return; }
+    var btn = $("fileUpload");
+    btn.disabled = true;
+    $("fileProgress").textContent = "准备上传 " + file.name + "…";
+    setBar("fileBar", 0);
+    var url = "/api/files/upload?name=" + encodeURIComponent(file.name) + "&kind=file";
+    xhrUpload(url, file, function (done, total) {
+      var p = total > 0 ? Math.round(done * 100 / total) : 0;
+      setBar("fileBar", p);
+      $("fileProgress").textContent = "已上传 " + bytesText(done) + " / " + bytesText(total)
+        + "（" + p + "%）";
+    }).then(function (r) {
+      setBar("fileBar", 100);
+      var saved = r.item && r.item.name ? r.item.name : file.name;
+      $("fileProgress").textContent = "已保存到「下载/PhoneBox/" + saved + "」";
+      input.value = "";
+      showOk("文件已上传到手机下载目录");
+      return loadFiles();
+    }).catch(function (e) {
+      setBar("fileBar", null);
+      $("fileProgress").textContent = "";
+      showError(e.message);
+    }).then(function () { btn.disabled = false; });
+  }
+
+  // ---------- 传输：便签 ----------
+
+  var noteTimer = null;
+
+  function loadNotes() {
+    return api("/api/notes").then(renderNotes);
+  }
+
+  function renderNotes(d) {
+    var box = $("noteList");
+    box.innerHTML = "";
+    var items = (d && d.items) || [];
+    $("noteMeta").textContent = items.length
+      ? (items.length + " 条 · 上限 " + (d.maxItems || 100) + " 条")
+      : "还没有便签";
+    items.forEach(function (it) {
+      var card = el("div", "note");
+      var head = el("div", "head");
+      var meta = el("div", "muted small", (it.from === "phone" ? "手机" : "电脑")
+        + " · " + timeText(it.ts));
+      var ops = el("div", "ops");
+      var copy = el("button", "small", "复制");
+      copy.addEventListener("click", function () {
+        copyText(it.text || "").then(function () { showOk("已复制便签"); })
+          .catch(function (e) { showError(e.message || "复制失败"); });
+      });
+      var del = el("button", "small danger", "删除");
+      del.addEventListener("click", function () {
+        api("/api/notes/delete", { method: "POST", body: { id: it.id } })
+          .then(function () { return loadNotes(); })
+          .catch(function (e) { showError(e.message); });
+      });
+      ops.appendChild(copy);
+      ops.appendChild(del);
+      head.appendChild(meta);
+      head.appendChild(ops);
+      card.appendChild(head);
+      card.appendChild(el("div", "txt", it.text || ""));
+      box.appendChild(card);
+    });
+  }
+
+  function addNote() {
+    var text = $("noteText").value;
+    if (!text.trim()) { showError("便签内容不能为空"); return; }
+    var from = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? "phone" : "pc";
+    api("/api/notes", { method: "POST", body: { text: text, from: from } })
+      .then(function () {
+        $("noteText").value = "";
+        showOk("便签已添加");
+        return loadNotes();
+      }).catch(function (e) { showError(e.message); });
+  }
+
+  function syncNoteTimer() {
+    if (noteTimer) {
+      clearInterval(noteTimer);
+      noteTimer = null;
+    }
+    if ($("tab-transfer").classList.contains("hidden")) return;
+    noteTimer = setInterval(function () {
+      loadNotes().catch(function () {});
+    }, 5000);
+  }
+
+  // ---------- 手动安装包 ----------
+
+  var apkTimer = null;
+
+  function refreshLocalUpdate() {
+    return api("/api/local-update/status").then(renderLocalUpdate);
+  }
+
+  function renderLocalUpdate(s) {
+    var info = s && s.apk;
+    if (info) {
+      $("apkInfo").textContent = "包名 " + info.package
+        + " · 版本 " + info.version + "（" + info.code + "）"
+        + " · 签名 " + (info.sameSigner ? "一致" : "不一致")
+        + " · " + bytesText(info.size || 0)
+        + (info.sameVersion ? " · 同版本重装" : "");
+    } else {
+      $("apkInfo").textContent = "";
+    }
+    $("apkInstall").disabled = !(s && s.ready && !s.busy);
+    if (apkTimer) {
+      clearInterval(apkTimer);
+      apkTimer = null;
+    }
+    if (s && (s.busy || s.state === "confirm")) {
+      apkTimer = setInterval(function () {
+        refreshLocalUpdate().catch(function () {});
+      }, 1500);
+    }
+  }
+
+  function uploadApk() {
+    var input = $("apkPick");
+    var file = input.files && input.files[0];
+    if (!file) { showError("请先选择 APK 文件"); return; }
+    if (!/\.apk$/i.test(file.name)) { showError("请选择 .apk 文件"); return; }
+    var btn = $("apkUpload");
+    btn.disabled = true;
+    $("apkProgress").textContent = "准备上传 " + file.name + "…";
+    setBar("apkBar", 0);
+    var url = "/api/files/upload?name=" + encodeURIComponent(file.name) + "&kind=apk";
+    xhrUpload(url, file, function (done, total) {
+      var p = total > 0 ? Math.round(done * 100 / total) : 0;
+      setBar("apkBar", p);
+      $("apkProgress").textContent = "已上传 " + bytesText(done) + " / " + bytesText(total)
+        + "（" + p + "%）";
+    }).then(function (r) {
+      setBar("apkBar", 100);
+      $("apkProgress").textContent = r.message || "校验通过";
+      input.value = "";
+      showOk("安装包校验通过");
+      return refreshLocalUpdate();
+    }).catch(function (e) {
+      setBar("apkBar", null);
+      $("apkProgress").textContent = "";
+      showError(e.message);
+    }).then(function () { btn.disabled = false; });
+  }
+
   // ---------- 日志 ----------
 
   function loadLogs() {
@@ -1420,8 +1712,10 @@
     rules: loadConfig,
     ddns: function () { return loadConfig().then(function () { return refreshStatus(); }); },
     logs: loadLogs,
+    transfer: function () { return loadFiles().then(loadNotes); },
     settings: function () {
-      return loadConfig().then(function () { return refreshUpdate(); });
+      return loadConfig().then(function () { return refreshUpdate(); })
+        .then(function () { return refreshLocalUpdate(); });
     }
   };
 
@@ -1430,7 +1724,7 @@
     document.querySelectorAll(".tabs button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === name);
     });
-    ["overview", "messages", "send", "channels", "rules", "ddns", "logs", "settings"].forEach(function (t) {
+    ["overview", "messages", "send", "channels", "rules", "ddns", "logs", "transfer", "settings"].forEach(function (t) {
       $("tab-" + t).classList.toggle("hidden", t !== name);
     });
     try {
@@ -1439,6 +1733,7 @@
     }
     showError("");
     syncLogTimer();
+    syncNoteTimer();
     var loader = tabLoaders[name];
     if (loader) loader().catch(function (e) { showError(e.message || String(e)); });
   }
@@ -1490,6 +1785,29 @@
       if (r.warning) showError(r.warning);
       else showOk("已开始下载更新，请在系统弹窗点「安装」");
       return refreshUpdate();
+    }).catch(function (e) { showError(e.message); });
+  });
+  $("fileUpload").addEventListener("click", uploadFile);
+  $("fileRefresh").addEventListener("click", function () {
+    loadFiles().catch(function (e) { showError(e.message); });
+  });
+  $("noteAdd").addEventListener("click", addNote);
+  $("noteRefresh").addEventListener("click", function () {
+    loadNotes().catch(function (e) { showError(e.message); });
+  });
+  $("noteClear").addEventListener("click", function () {
+    if (!confirm("清空全部便签？")) return;
+    api("/api/notes/clear", { method: "POST", body: {} })
+      .then(function () { return loadNotes(); })
+      .catch(function (e) { showError(e.message); });
+  });
+  $("apkUpload").addEventListener("click", uploadApk);
+  $("apkInstall").addEventListener("click", function () {
+    if (!confirm("交给系统安装器安装这个包？安装期间服务会短暂中断。")) return;
+    api("/api/local-update/install", { method: "POST", body: {} }).then(function (r) {
+      if (r.warning) showError(r.warning);
+      else showOk("已提交安装，请在系统弹窗点「安装」");
+      return refreshLocalUpdate();
     }).catch(function (e) { showError(e.message); });
   });
   $("simsForm").addEventListener("submit", saveSims);
@@ -1579,6 +1897,7 @@
   var initial = (location.hash || "").replace(/^#/, "");
   refreshStatus();
   refreshUpdate().catch(function () {});
+  refreshLocalUpdate().catch(function () {});
   showTab(tabLoaders[initial] ? initial : "overview");
   setInterval(function () {
     if (!$("tab-overview").classList.contains("hidden")) refreshStatus();

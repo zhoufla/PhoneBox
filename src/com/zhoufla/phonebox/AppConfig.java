@@ -83,6 +83,43 @@ public final class AppConfig {
         return web == null ? "" : web.optString("token", "");
     }
 
+    public synchronized boolean transferEnabled() {
+        JSONObject t = data.optJSONObject("transfer");
+        return t == null || t.optBoolean("enabled", true);
+    }
+
+    public synchronized boolean transferAllowInstall() {
+        JSONObject t = data.optJSONObject("transfer");
+        return t == null || t.optBoolean("allowInstall", true);
+    }
+
+    public synchronized long transferMaxBytes() {
+        JSONObject t = data.optJSONObject("transfer");
+        long v = t == null ? 30L * 1024 * 1024 : t.optLong("maxFileBytes", 30L * 1024 * 1024);
+        return Math.max(1024L * 1024L, Math.min(64L * 1024 * 1024, v));
+    }
+
+    public synchronized long transferMaxTotal() {
+        JSONObject t = data.optJSONObject("transfer");
+        long v = t == null ? 100L * 1024 * 1024 : t.optLong("maxTotalBytes", 100L * 1024 * 1024);
+        return Math.max(10L * 1024 * 1024, Math.min(1024L * 1024 * 1024, v));
+    }
+
+    public synchronized int transferKeepDays() {
+        JSONObject t = data.optJSONObject("transfer");
+        return t == null ? 30 : Math.max(0, Math.min(3650, t.optInt("keepDays", 30)));
+    }
+
+    public synchronized int notesMaxItems() {
+        JSONObject n = data.optJSONObject("notes");
+        return n == null ? 100 : Math.max(10, Math.min(500, n.optInt("maxItems", 100)));
+    }
+
+    public synchronized int notesPollSec() {
+        JSONObject n = data.optJSONObject("notes");
+        return n == null ? 5 : Math.max(2, Math.min(60, n.optInt("pollSec", 5)));
+    }
+
     public synchronized String deviceName() {
         String name = data.optString("device", "");
         return name.isEmpty() ? Build.MODEL : name;
@@ -499,6 +536,36 @@ public final class AppConfig {
                         retention.optInt("days", 30))));
             }
 
+            JSONObject transfer = incoming.optJSONObject("transfer");
+            if (transfer != null) {
+                JSONObject cur = next.optJSONObject("transfer");
+                if (cur == null) {
+                    cur = new JSONObject();
+                    next.put("transfer", cur);
+                }
+                cur.put("enabled", transfer.optBoolean("enabled", true));
+                cur.put("allowInstall", transfer.optBoolean("allowInstall", true));
+                cur.put("maxFileBytes", Math.max(1024L * 1024L, Math.min(64L * 1024 * 1024,
+                        transfer.optLong("maxFileBytes", 30L * 1024 * 1024))));
+                cur.put("maxTotalBytes", Math.max(10L * 1024 * 1024, Math.min(1024L * 1024 * 1024,
+                        transfer.optLong("maxTotalBytes", 100L * 1024 * 1024))));
+                cur.put("keepDays", Math.max(0, Math.min(3650,
+                        transfer.optInt("keepDays", 30))));
+            }
+
+            JSONObject notes = incoming.optJSONObject("notes");
+            if (notes != null) {
+                JSONObject cur = next.optJSONObject("notes");
+                if (cur == null) {
+                    cur = new JSONObject();
+                    next.put("notes", cur);
+                }
+                cur.put("maxItems", Math.max(10, Math.min(500,
+                        notes.optInt("maxItems", 100))));
+                cur.put("pollSec", Math.max(2, Math.min(60,
+                        notes.optInt("pollSec", 5))));
+            }
+
             next.put("version", VERSION);
             data = next;
             writeQuietly(next);
@@ -747,6 +814,19 @@ public final class AppConfig {
             log.put("level", "info");
             log.put("maxLines", 500);
             root.put("log", log);
+
+            JSONObject transfer = new JSONObject();
+            transfer.put("enabled", true);
+            transfer.put("allowInstall", true);
+            transfer.put("maxFileBytes", 30L * 1024 * 1024);
+            transfer.put("maxTotalBytes", 100L * 1024 * 1024);
+            transfer.put("keepDays", 30);
+            root.put("transfer", transfer);
+
+            JSONObject notes = new JSONObject();
+            notes.put("maxItems", 100);
+            notes.put("pollSec", 5);
+            root.put("notes", notes);
 
             return root;
         } catch (JSONException e) {

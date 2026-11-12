@@ -329,6 +329,70 @@ Webhook 事件 JSON 同步新增 `sim` / `slot` 字段（有值时才出现）�
 未授予 `REQUEST_INSTALL_PACKAGES` 时不会尝试安装，状态置为 `need_permission`，
 需到系统设置或 App 首页授权一次。安装结果由 `UpdateInstallReceiver` 回写状态并写入运行日志。
 
+## 手动上传安装包
+
+GitHub 打不开或 API 限流（HTTP 403/429）时，可以在设置页直接上传 APK。上传后先校验，再由用户点安装：
+
+| 接口 | 说明 |
+|---|---|
+| `POST /api/files/upload?name=<文件名>&kind=apk` | 原始字节上传（`Content-Type: application/octet-stream`），暂存并校验 |
+| `GET /api/local-update/status` | 待安装包信息与状态，纯内存读取，可轮询 |
+| `POST /api/local-update/install` | 交给系统安装器，立即返回 `{ok,started}` |
+| `POST /api/local-update/clear` | 丢弃待安装包 |
+
+校验规则：包名必须是 `com.zhoufla.phonebox`，签名证书 SHA-256 必须与已安装应用一致；
+允许同版本重装，不要求版本码递增（系统仍会拒绝降级）。校验通过后状态为 `ready`。
+
+```json
+{"ok":true,"state":"ready","message":"安装包已就绪：0.8.2（802），签名一致",
+ "apk":{"package":"com.zhoufla.phonebox","version":"0.8.2","code":802,
+        "installedCode":801,"size":115000,"signer":"9f2c…","samePackage":true,
+        "sameSigner":true,"sameVersion":false}}
+```
+
+`state`：`idle` / `ready` / `need_permission` / `installing` / `confirm` / `installed` / `error`。
+安装结果由 `LocalInstallReceiver` 回写，与在线更新完全独立，互不覆盖状态。
+
+## 文件收件箱
+
+上传的文件直接写入手机公共「下载/PhoneBox」目录（Android 10+ 走 MediaStore，不需要存储权限）。
+
+| 接口 | 说明 |
+|---|---|
+| `POST /api/files/upload?name=<文件名>&kind=file` | 原始字节上传，返回保存后的条目 |
+| `GET /api/files` | 列出已上传文件与总占用 |
+| `GET /api/files/download?id=<id>` | 鉴权下载（流式，带 `Content-Disposition`） |
+| `POST /api/files/delete` | `{"id":"..."}`，同时删除手机上的文件 |
+
+单文件默认 30 MB、总量 100 MB、保留 30 天，超出时按时间从旧到新清理。
+文件名会被清洗（去掉路径分隔符与控制字符），同名文件由系统自动加序号，不会覆盖。
+
+```sh
+curl -u admin:密码 -H "X-Requested-With: phonebox" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @report.pdf \
+  "http://192.168.1.23:8080/api/files/upload?name=report.pdf&kind=file"
+```
+
+## 便签
+
+电脑往面板贴一段文本，手机打开同一页面一键复制。存 `files/notes.json`，最多 100 条、单条 8192 字。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/notes` | `{items:[{id,ts,text,from}],count,maxItems,maxText}`，最新在前 |
+| `POST /api/notes` | `{"text":"...","from":"pc" 或 "phone"}` |
+| `POST /api/notes/delete` | `{"id":"..."}` |
+| `POST /api/notes/clear` | 清空全部 |
+
+`from` 由前端按 User-Agent 判断，仅用于展示「电脑 / 手机」。
+
+## 上传约定
+
+- 上传请求必须声明 `Content-Length`，`Content-Type: application/octet-stream`；
+- 其他接口仍只接受 1 MiB 以内的 UTF-8 JSON；上传硬上限 64 MiB，业务上限见 `transfer.maxFileBytes`；
+- 所有上传接口都需要鉴权，POST 仍需 `X-Requested-With: phonebox`；超限返回 413。
+
 ## 保活
 
 ### `POST /api/watchdog/rearm`
@@ -425,8 +489,8 @@ curl -u admin:密码 -OJ http://192.168.1.23:8080/api/logs/download
 
 ## 约定
 
-- 请求/响应均为 UTF-8 JSON。
-- 成功 200；参数错误 400；未认证 401；CSRF 头缺失 403；不存在 404；内部错误 500。
+- 请求/响应均为 UTF-8 JSON（文件上传用原始字节，见「上传约定」）。
+- 成功 200；参数错误 400；未认证 401；CSRF 头缺失 403；不存在 404；请求体过大 413；内部错误 500。
 - 错误体：`{"error":"..."}`。
 - 默认不发送 CORS 头。
 - 面板是 HTTP，公网暴露前请阅读 [`MIUI-KEEPALIVE.md`](MIUI-KEEPALIVE.md) 的安全说明。

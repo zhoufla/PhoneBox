@@ -241,6 +241,7 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - [x] M6 在线升级（GitHub Release、APK 校验、系统确认安装；正式 Release 需配置签名 Secrets）
 - [x] M7 0.8.0 增量（测试事件、异常告警、PWA-lite）
 - [x] M8 0.8.1 增量（概览双卡号码、模板默认带接收号码）
+- [x] M9 0.8.2 增量（手动上传安装包、文件收件箱、便签）
 
 ### M7 范围说明（0.8.0）
 
@@ -256,3 +257,12 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - `sims.autoSimLine` 默认 `true`：模板没写 `{sim}` 时自动追加一行，保证旧配置升级后也带接收号码；显式写 `{sim}` 的模板保持原样。告警外推复用旧 `Sender.send` 重载，不附加接收号码。
 - 面板在线更新新增 `PanelUpdater`：复用 `GithubUpdater` 的三步链路，网络与安装调用全部放后台线程，HTTP 只暴露状态/检查/安装三个接口并轮询进度；`UpdateInstallReceiver` 回写最终状态。未授予 `REQUEST_INSTALL_PACKAGES` 时只提示、不尝试安装；系统确认后进程重启，面板短暂断开属正常。
 - 本次明确不做：SIM 卡变化告警、规则按 subId 路由、号码脱敏、HTTPS/PWA Service Worker、自动定时检查更新与自动安装。
+
+### M9 范围说明（0.8.2）
+
+- **上传底座**：`Http` 识别 `Content-Type: application/octet-stream`，走独立流式分支边读边写临时文件（缓存目录），避免 30 MB 常驻内存；上传读超时放宽到 60 秒，其余接口保持 1 MiB 文本上限。`Resp` 增加流式响应体，用于大文件下载。
+- **手动上传安装包**：`/api/files/upload?kind=apk` 暂存后立即校验「包名 + 签名证书 SHA-256」，通过才允许点安装；允许同版本重装，不要求版本码递增（系统仍会拒绝降级）。`LocalUpdater` 与 `LocalInstallReceiver` 使用独立状态和 action，与 `PanelUpdater` 互不覆盖。GitHub 403/429 的文案改为引导手动上传。
+- **文件收件箱**：`WebFiles` 直接写入公共「下载/PhoneBox」（API 29+ MediaStore + IS_PENDING，API 26-28 回退 `WRITE_EXTERNAL_STORAGE`），索引 `files/inbox.json` 只存元数据；单文件 30 MB、总量 100 MB、保留 30 天，超限按时间清理最旧。
+- **便签**：`Notes` 用 `files/notes.json` 原子写，最多 100 条、单条 8192 字；面板新增「传输」标签页，电脑/手机双向写入，手机一键复制复用 `copyText()` 的 `execCommand` 降级（明文 HTTP 下 Clipboard API 不可用）。
+- 安全边界：所有新接口沿用 Basic/Bearer + `X-Requested-With: phonebox`；上传文件名清洗、不覆盖、不作为静态资源暴露；安装必须用户点按钮并经系统确认弹窗，不静默安装。
+- 本次明确不做：HTTPS、断点续传/分块上传、自动定时安装、手机→电脑文件回传、改 SQLite 表结构、Service Worker。

@@ -2,6 +2,8 @@ package com.zhoufla.phonebox;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,6 +31,9 @@ public final class Http {
         public String path = "/";
         public String rawQuery = "";
         public String body = "";
+        /** 二进制上传已落盘的临时文件；非 null 时 body 为空，用完后由 Http 兜底删除。 */
+        public File uploadFile;
+        public long uploadBytes = 0;
         public final Map<String, String> headers = new LinkedHashMap<String, String>();
         public final Map<String, String> query = new LinkedHashMap<String, String>();
 
@@ -46,6 +51,9 @@ public final class Http {
         public int status = 200;
         public String contentType = "application/json; charset=utf-8";
         public byte[] body = new byte[0];
+        /** 流式响应体（大文件下载）；非 null 时忽略 body，streamLength 作为 Content-Length。 */
+        public InputStream stream;
+        public long streamLength = -1;
         public final Map<String, String> headers = new LinkedHashMap<String, String>();
 
         public static Resp text(int status, String text) {
@@ -72,16 +80,25 @@ public final class Http {
         }
     }
 
+    private static final long MAX_UPLOAD_BYTES = 64L * 1024L * 1024L;
+    private static final int UPLOAD_TIMEOUT_MS = 60000;
+
     private final int requestedPort;
     private final Handler handler;
+    private final File uploadDir;
 
     private volatile boolean running = false;
     private volatile ServerSocket server;
     private Thread acceptThread;
 
     public Http(int port, Handler handler) {
+        this(port, handler, null);
+    }
+
+    public Http(int port, Handler handler, File uploadDir) {
         this.requestedPort = port;
         this.handler = handler;
+        this.uploadDir = uploadDir;
     }
 
     public synchronized void start() throws IOException {
@@ -148,7 +165,14 @@ public final class Http {
         }
     }
 
+    private static boolean isUpload(Req req) {
+        String type = req.header("content-type");
+        return type != null
+                && type.toLowerCase(Locale.ROOT).startsWith("application/octet-stream");
+    }
+
     private void handle(Socket socket) {
+        Req req = null;
         try {
             socket.setSoTimeout(10000);
             InputStream in = new BufferedInputStream(socket.getInputStream());
@@ -164,7 +188,7 @@ public final class Http {
                 return;
             }
 
-            Req req = new Req();
+            req = new Req();
             req.method = parts[0];
             String target = parts[1];
             int q = target.indexOf('?');
@@ -190,21 +214,65 @@ public final class Http {
                 }
             }
 
+            boolean upload = isUpload(req);
+            if (upload) {
+                socket.setSoTimeout(UPLOAD_TIMEOUT_MS);
+            }
+
             if (contentLength > 0) {
-                if (contentLength > 1024 * 1024) {
+                long limit = upload ? MAX_UPLOAD_BYTES : 1024L * 1024L;
+                if (contentLength > limit) {
                     write(out, Resp.text(413, "body too large"), false);
                     return;
                 }
-                byte[] body = new byte[contentLength];
-                int off = 0;
-                while (off < contentLength) {
-                    int n = in.read(body, off, contentLength - off);
-                    if (n < 0) {
-                        break;
+                if (upload) {
+                    if (uploadDir == null) {
+                        write(out, Resp.text(503, "upload disabled"), false);
+                        return;
                     }
-                    off += n;
+                    if (!uploadDir.isDirectory() && !uploadDir.mkdirs()) {
+                        write(out, Resp.text(500, "upload dir unavailable"), false);
+                        return;
+                    }
+                    File tmp = File.createTempFile("phonebox-upload-", ".bin", uploadDir);
+                    req.uploadFile = tmp;
+                    FileOutputStream fos = new FileOutputStream(tmp);
+                    long left = contentLength;
+                    byte[] buffer = new byte[8192];
+                    try {
+                        while (left > 0) {
+                            int n = in.read(buffer, 0, (int) Math.min(buffer.length, left));
+                            if (n < 0) {
+                                break;
+                            }
+                            fos.write(buffer, 0, n);
+                            left -= n;
+                            req.uploadBytes += n;
+                        }
+                        fos.flush();
+                        fos.getFD().sync();
+                    } finally {
+                        fos.close();
+                    }
+                    if (req.uploadBytes != contentLength) {
+                        //noinspection ResultOfMethodCallIgnored
+                        tmp.delete();
+                        req.uploadFile = null;
+                        write(out, Resp.text(400, "incomplete body"), false);
+                        return;
+                    }
+                } else {
+                    byte[] body = new byte[contentLength];
+                    int off = 0;
+                    while (off < contentLength) {
+                        int n = in.read(body, off, contentLength - off);
+                        if (n < 0) {
+                            break;
+                        }
+                        off += n;
+                    }
+                    req.body = new String(body, 0, off, StandardCharsets.UTF_8);
                 }
-                req.body = new String(body, 0, off, StandardCharsets.UTF_8);
             }
 
             Resp resp;
@@ -218,6 +286,10 @@ public final class Http {
         } catch (Exception e) {
             Logs.add("面板连接异常：" + e);
         } finally {
+            if (req != null && req.uploadFile != null) {
+                //noinspection ResultOfMethodCallIgnored
+                req.uploadFile.delete();
+            }
             try {
                 socket.close();
             } catch (IOException ignored) {
@@ -267,10 +339,12 @@ public final class Http {
 
     private static void write(OutputStream out, Resp resp, boolean head) throws IOException {
         byte[] body = resp.body == null ? new byte[0] : resp.body;
+        boolean streamed = resp.stream != null;
+        long length = streamed ? resp.streamLength : body.length;
         StringBuilder h = new StringBuilder();
         h.append("HTTP/1.1 ").append(resp.status).append(' ').append(reason(resp.status)).append("\r\n");
         h.append("Content-Type: ").append(resp.contentType).append("\r\n");
-        h.append("Content-Length: ").append(body.length).append("\r\n");
+        h.append("Content-Length: ").append(length < 0 ? 0 : length).append("\r\n");
         h.append("Connection: close\r\n");
         h.append("Cache-Control: no-store\r\n");
         h.append("X-Content-Type-Options: nosniff\r\n");
@@ -280,10 +354,36 @@ public final class Http {
         }
         h.append("\r\n");
         out.write(h.toString().getBytes(StandardCharsets.ISO_8859_1));
-        if (!head) {
-            out.write(body);
+        try {
+            if (!head) {
+                if (streamed) {
+                    copy(resp.stream, out, length);
+                } else {
+                    out.write(body);
+                }
+            }
+            out.flush();
+        } finally {
+            if (streamed) {
+                try {
+                    resp.stream.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
-        out.flush();
+    }
+
+    private static void copy(InputStream in, OutputStream out, long length) throws IOException {
+        byte[] buffer = new byte[8192];
+        long left = length;
+        while (left > 0) {
+            int n = in.read(buffer, 0, (int) Math.min(buffer.length, left));
+            if (n < 0) {
+                break;
+            }
+            out.write(buffer, 0, n);
+            left -= n;
+        }
     }
 
     private static String reason(int status) {

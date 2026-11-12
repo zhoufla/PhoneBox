@@ -102,6 +102,17 @@
   "retention": {
     "days": 30
   },
+  "transfer": {
+    "enabled": true,
+    "allowInstall": true,
+    "maxFileBytes": 31457280,
+    "maxTotalBytes": 104857600,
+    "keepDays": 30
+  },
+  "notes": {
+    "maxItems": 100,
+    "pollSec": 5
+  },
   "log": {
     "level": "info",
     "maxLines": 500
