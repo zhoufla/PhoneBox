@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>PhoneBox</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --card2: #1c2230;
+    --line: #262d38;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --amber: #d29922;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 22px 16px 40px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: .2px; }
+  h2 { margin: 0 0 4px; font-size: 17px; }
+  .sub { margin-top: 4px; color: var(--muted); font-size: 13px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: 12px; white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+  .dot.on { background: var(--green); }
+  .dot.warn { background: var(--amber); }
+
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin: 18px 0 0; padding-bottom: 2px; }
+  .tabs button {
+    margin: 0; white-space: nowrap; background: transparent; border: 1px solid transparent;
+    color: var(--muted); padding: 8px 12px; border-radius: 9px; font-size: 14px;
+  }
+  .tabs button.active { background: var(--card); border-color: var(--line); color: var(--text); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .card {
+    padding: 16px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--card); min-width: 0;
+  }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 + .muted { margin-bottom: 8px; }
+  .label { color: var(--muted); font-size: 12px; letter-spacing: .3px; }
+  .value { margin-top: 8px; font-size: 15px; word-break: break-word; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .err {
+    display: none; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(248, 81, 73, .12); border: 1px solid rgba(248, 81, 73, .35);
+    color: #ffb4ae; font-size: 13px; word-break: break-all;
+  }
+  .ok {
+    display: none; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(63, 185, 80, .12); border: 1px solid rgba(63, 185, 80, .35);
+    color: #9be9a8; font-size: 13px; word-break: break-all;
+  }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .stat { padding: 12px; border-radius: 12px; background: var(--card2); border: 1px solid var(--line); }
+  .stat .n { font-size: 22px; font-weight: 600; margin-top: 2px; }
+
+  .list { margin: 9px 0 0; padding: 0; list-style: none; }
+  .list li {
+    display: flex; justify-content: space-between; gap: 10px; padding: 8px 0;
+    border-top: 1px solid var(--line); font-size: 13px;
+  }
+  .list li:first-child { border-top: 0; padding-top: 0; }
+  .list .iface { color: var(--muted); white-space: nowrap; }
+
+  .msg { padding: 12px 0; border-top: 1px solid var(--line); }
+  .msg:first-child { border-top: 0; padding-top: 0; }
+  .msg .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+  .msg .peer { font-weight: 600; }
+  .msg .time { color: var(--muted); font-size: 12px; }
+  .msg .body { margin-top: 6px; white-space: pre-wrap; word-break: break-word; font-size: 14px; }
+  .msg .dl { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .msg.failed { border-left: 3px solid var(--red); padding-left: 10px; }
+
+  .tag {
+    display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 11px;
+    background: rgba(88, 166, 255, .12); color: var(--blue); border: 1px solid rgba(88, 166, 255, .25);
+  }
+  .tag.green { background: rgba(63, 185, 80, .12); color: var(--green); border-color: rgba(63, 185, 80, .25); }
+  .tag.red { background: rgba(248, 81, 73, .12); color: var(--red); border-color: rgba(248, 81, 73, .3); }
+  .tag.amber { background: rgba(210, 153, 34, .12); color: var(--amber); border-color: rgba(210, 153, 34, .25); }
+
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button {
+    margin-top: 10px; appearance: none; border: 1px solid var(--line);
+    background: #21262d; color: var(--text); border-radius: 9px;
+    padding: 8px 13px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: #2a313a; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.primary:hover { background: #2a7cf5; }
+  button.danger { color: #ffb4ae; border-color: rgba(248, 81, 73, .4); background: transparent; }
+  button.small { padding: 4px 9px; font-size: 12px; margin-top: 6px; }
+  input, select, textarea {
+    width: 100%; margin-top: 6px; padding: 9px 10px; border-radius: 9px;
+    border: 1px solid var(--line); background: #0f141c; color: var(--text);
+    font: inherit; font-size: 14px;
+  }
+  textarea { min-height: 90px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  label { display: block; margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ch { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; background: var(--card2); }
+  .ch .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .ch .meta { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-all; }
+  dialog {
+    border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+    color: var(--text); width: min(560px, calc(100vw - 28px)); padding: 18px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .actions button { margin-top: 0; }
+  .logs {
+    margin: 8px 0 0; padding: 12px; border-radius: 10px; background: #0b0f15;
+    border: 1px solid var(--line); font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+    max-height: 420px; overflow: auto;
+  }
+  .hidden { display: none !important; }
+  footer { margin-top: 22px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+  @media (max-width: 640px) {
+    .wrap { padding: 18px 12px 32px; }
+    h1 { font-size: 22px; }
+    .grid { grid-template-columns: 1fr; }
+    .card.wide { grid-column: auto; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>PhoneBox</h1>
+      <div class="sub">无 root 短信网关 · 设备面板</div>
+    </div>
+    <div class="pill"><span id="conn" class="dot"></span><span id="connText">连接中</span></div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="overview" class="active">概览</button>
+    <button data-tab="messages">短信</button>
+    <button data-tab="send">发送</button>
+    <button data-tab="channels">通道</button>
+    <button data-tab="rules">规则</button>
+    <button data-tab="logs">日志</button>
+    <button data-tab="settings">设置</button>
+  </nav>
+
+  <div id="error" class="err"></div>
+  <div id="ok" class="ok"></div>
+
+  <!-- 概览 -->
+  <section id="tab-overview">
+    <div class="card wide" style="margin-top:12px;">
+      <h2 id="service">正在读取服务状态…</h2>
+      <div id="serviceMeta" class="muted small">—</div>
+      <div class="stats">
+        <div class="stat"><div class="label">待发送</div><div id="s-pending" class="n">—</div></div>
+        <div class="stat"><div class="label">已送达</div><div id="s-delivered" class="n">—</div></div>
+        <div class="stat"><div class="label">失败</div><div id="s-failed" class="n">—</div></div>
+        <div class="stat"><div class="label">收信总数</div><div id="s-events" class="n">—</div></div>
+      </div>
+      <div id="lastError" class="muted small" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="grid">
+      <article class="card">
+        <div class="label">面板</div>
+        <div id="panel" class="value mono">—</div>
+      </article>
+      <article class="card">
+        <div class="label">设备</div>
+        <div id="device" class="value">—</div>
+      </article>
+      <article class="card wide">
+        <div class="label">访问地址</div>
+        <ul id="addresses" class="list"><li class="muted">正在读取…</li></ul>
+      </article>
+      <article class="card wide">
+        <div class="label">转发通道</div>
+        <div id="channelSummary" class="value">—</div>
+      </article>
+    </div>
+  </section>
+
+  <!-- 短信 -->
+  <section id="tab-messages" class="hidden">
+    <div class="card wide" style="margin-top:12px;">
+      <div class="top" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <h2>收到的短信</h2>
+        <div>
+          <button class="small" id="importInbox" style="margin-top:0;">补收系统收件箱</button>
+          <button class="small" id="msgRefresh" style="margin-top:0;">刷新</button>
+        </div>
+      </div>
+      <div class="muted small">按时间倒序，最多显示最近 20 条。补收只读系统收件箱，不会重复转发。</div>
+      <div id="messages"></div>
+    </div>
+  </section>
+
+  <!-- 发送 -->
+  <section id="tab-send" class="hidden">
+    <div class="grid">
+      <article class="card wide">
+        <h2>发送短信</h2>
+        <div class="muted small">通过本机 SIM 卡发送，结果会回写发件记录。</div>
+        <form id="sendForm">
+          <label>号码<input id="sendTo" name="to" autocomplete="off" placeholder="10086 或 +8613800138000"></label>
+          <label>SIM 卡<select id="sendSub">
+            <option value="-1">默认卡</option>
+            <option value="1">SIM 1</option>
+            <option value="2">SIM 2</option>
+          </select></label>
+          <label>内容<textarea id="sendBody" name="body" placeholder="短信内容"></textarea></label>
+          <button class="primary" type="submit">发送</button>
+        </form>
+      </article>
+      <article class="card wide">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <h2>发件记录</h2>
+          <button class="small" id="outRefresh" style="margin-top:0;">刷新</button>
+        </div>
+        <div id="outbox"></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- 通道 -->
+  <section id="tab-channels" class="hidden">
+    <div class="card wide" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div>
+          <h2>转发通道</h2>
+          <div class="muted small">Webhook / 钉钉 / Telegram，可同时启用多个。</div>
+        </div>
+        <button class="small" id="addChannel" style="margin-top:0;">新增通道</button>
+      </div>
+      <div id="channels"></div>
+    </div>
+  </section>
+
+  <!-- 规则 -->
+  <section id="tab-rules" class="hidden">
+    <div class="grid">
+      <article class="card wide">
+        <h2>转发规则</h2>
+        <div class="muted small">
+          数组按顺序求值；peer/body 是正则，from/to 是 HH:mm。命中 relay 规则投递指定通道，
+          action=drop 丢弃但仍入库。没有命中时按「默认动作」处理。
+        </div>
+        <label>规则 JSON<textarea id="rulesJson" spellcheck="false"></textarea></label>
+        <div class="row">
+          <label>默认动作<select id="rulesDefault">
+            <option value="all">投递全部通道</option>
+            <option value="drop">丢弃</option>
+          </select></label>
+          <div></div>
+        </div>
+        <button class="primary" id="saveRules" type="button">保存规则</button>
+      </article>
+      <article class="card wide">
+        <h2>规则测试</h2>
+        <label>发件人<input id="testPeer" placeholder="10086"></label>
+        <label>正文<textarea id="testBody" placeholder="【示例】验证码 123456，5 分钟内有效"></textarea></label>
+        <button id="runTest" type="button">测试匹配</button>
+        <pre id="testResult" class="logs hidden"></pre>
+      </article>
+    </div>
+  </section>
+
+  <!-- 日志 -->
+  <section id="tab-logs" class="hidden">
+    <div class="card wide" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <h2>运行日志</h2>
+        <button class="small" id="logRefresh" style="margin-top:0;">刷新</button>
+      </div>
+      <div class="muted small">进程内环形日志，最多 500 行；重启后清空。</div>
+      <pre id="logs" class="logs">正在读取…</pre>
+    </div>
+  </section>
+
+  <!-- 设置 -->
+  <section id="tab-settings" class="hidden">
+    <div class="card wide" style="margin-top:12px;">
+      <h2>面板与短信</h2>
+      <form id="settingsForm">
+        <div class="row">
+          <label>设备名<input id="cfgDevice" autocomplete="off"></label>
+          <label>面板端口<input id="cfgPort" type="number" min="1" max="65535"></label>
+        </div>
+        <div class="row">
+          <label>面板账号<input id="cfgUser" autocomplete="off"></label>
+          <label>面板密码<input id="cfgPass" autocomplete="new-password" placeholder="留空或 ****** 表示不改"></label>
+        </div>
+        <label>API Token<input id="cfgToken" autocomplete="off" placeholder="留空或 ****** 表示不改"></label>
+        <div class="row">
+          <label>去重窗口（秒）<input id="cfgDedup" type="number" min="0" max="600"></label>
+          <label>默认发送 SIM
+            <select id="cfgSub">
+              <option value="-1">默认卡</option>
+              <option value="1">SIM 1</option>
+              <option value="2">SIM 2</option>
+            </select>
+          </label>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+          <input id="cfgSmsEnabled" type="checkbox" style="width:auto;margin:0;"> 启用短信接收与转发
+        </label>
+        <button class="primary" type="submit">保存设置</button>
+      </form>
+      <div class="muted small" style="margin-top:12px;">
+        修改端口后面板会自动重启；密码和 Token 立即生效。
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    PhoneBox <span id="version">—</span> · 面板仅用于自有设备，请勿公开分享地址与凭据。<br>
+    无 root 无法对抗 MIUI 强制停止；请打开自启动、省电策略“无限制”并锁定后台。
+  </footer>
+</div>
+
+<!-- 通道编辑 -->
+<dialog id="chDialog">
+  <form id="chForm">
+    <h2 id="chTitle">新增通道</h2>
+    <label>名称<input id="chName" autocomplete="off" placeholder="例如 dingtalk"></label>
+    <label>类型<select id="chType">
+      <option value="webhook">Webhook</option>
+      <option value="dingtalk">钉钉机器人</option>
+      <option value="telegram">Telegram Bot</option>
+    </select></label>
+    <label class="ch-url">URL<input id="chUrl" autocomplete="off" placeholder="https://..."></label>
+    <label class="ch-token">Token / Bot Token<input id="chToken" autocomplete="off" placeholder="留空或 ****** 表示不改"></label>
+    <label class="ch-secret">钉钉加签 Secret<input id="chSecret" autocomplete="off" placeholder="SEC...，可留空"></label>
+    <label class="ch-chat">Telegram chatId<input id="chChat" autocomplete="off" placeholder="123456789 或 -100..."></label>
+    <label>转发模板<textarea id="chTemplate" placeholder="{peer}&#10;{body}&#10;设备：{device}"></textarea></label>
+    <div class="row ch-ding">
+      <label>钉钉格式<select id="chFormat">
+        <option value="text">text</option>
+        <option value="markdown">markdown</option>
+      </select></label>
+      <label>卡片标题<input id="chTitleText" autocomplete="off" placeholder="PhoneBox 短信"></label>
+    </div>
+    <label>设备标签<input id="chTag" autocomplete="off" placeholder="可选，多设备共用机器人时区分"></label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+      <input id="chEnabled" type="checkbox" style="width:auto;margin:0;" checked> 启用
+    </label>
+    <div class="actions">
+      <button type="button" id="chCancel">取消</button>
+      <button type="submit" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { config: null, channels: [], editing: -1, status: null };
+
+  function showError(text) {
+    var box = $("error");
+    if (!text) { box.style.display = "none"; box.textContent = ""; return; }
+    box.style.display = "block";
+    box.textContent = text;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function showOk(text) {
+    var box = $("ok");
+    if (!text) { box.style.display = "none"; box.textContent = ""; return; }
+    box.style.display = "block";
+    box.textContent = text;
+    setTimeout(function () { box.style.display = "none"; }, 4000);
+  }
+
+  function setConn(ok, text) {
+    $("conn").className = "dot" + (ok ? " on" : "");
+    $("connText").textContent = text;
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var init = { cache: "no-store", credentials: "same-origin", headers: {} };
+    if (opts.method && opts.method !== "GET") {
+      init.method = opts.method;
+      init.headers["X-Requested-With"] = "phonebox";
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(opts.body || {});
+    }
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { error: text }; }
+        if (res.status === 401) { throw new Error("认证失败，请刷新页面重新登录"); }
+        if (!res.ok) { throw new Error(data.error || ("HTTP " + res.status)); }
+        return data;
+      });
+    });
+  }
+
+  function fmtUptime(sec) {
+    sec = Math.max(0, Number(sec) || 0);
+    var d = Math.floor(sec / 86400);
+    var h = Math.floor((sec % 86400) / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = Math.floor(sec % 60);
+    if (d > 0) return d + " 天 " + h + " 小时";
+    if (h > 0) return h + " 小时 " + m + " 分";
+    if (m > 0) return m + " 分 " + s + " 秒";
+    return s + " 秒";
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // ---------- 状态 ----------
+
+  function refreshStatus() {
+    return api("/api/status").then(function (d) {
+      state.status = d;
+      setConn(!!d.running, d.running ? "服务运行中" : "服务未运行");
+      showError(d.panel && d.panel.error ? d.panel.error : "");
+
+      var service = $("service");
+      service.textContent = d.running ? "服务运行中" : "服务未运行";
+      service.style.color = d.running ? "var(--green)" : "var(--red)";
+
+      var meta = ["运行 " + fmtUptime(d.uptimeSec)];
+      if (d.heartbeatAgeSec >= 0) meta.push("心跳 " + d.heartbeatAgeSec + " 秒前");
+      if (d.panel && d.panel.port) meta.push("端口 " + d.panel.port);
+      $("serviceMeta").textContent = meta.join(" · ");
+
+      var sms = d.sms || {};
+      $("s-pending").textContent = sms.pending == null ? "—" : sms.pending;
+      $("s-delivered").textContent = sms.delivered == null ? "—" : sms.delivered;
+      $("s-failed").textContent = sms.failed == null ? "—" : sms.failed;
+      $("s-events").textContent = sms.events == null ? "—" : sms.events;
+      $("lastError").textContent = sms.lastError ? ("最近错误：" + sms.lastError) : "";
+
+      $("panel").textContent = d.panel && d.panel.running
+        ? "监听 :" + d.panel.port : "未运行" + (d.panel && d.panel.error ? " · " + d.panel.error : "");
+      if (d.device) {
+        $("device").textContent = d.device.model + " · Android " + d.device.android
+          + " (SDK " + d.device.sdk + ")";
+      }
+
+      renderAddresses(d.addresses || []);
+      $("channelSummary").textContent = (sms.channels && sms.channels.length)
+        ? sms.channels.join(" · ") : "未配置通道";
+      $("version").textContent = d.version || "—";
+    }).catch(function (e) {
+      setConn(false, "连接失败");
+      showError(e.message || String(e));
+    });
+  }
+
+  function renderAddresses(addrs) {
+    var list = $("addresses");
+    list.textContent = "";
+    if (!addrs.length) {
+      list.appendChild(el("li", "muted", "未检测到可用地址"));
+      return;
+    }
+    addrs.forEach(function (a) {
+      var li = el("li");
+      li.appendChild(el("span", "mono", a.url));
+      li.appendChild(el("span", "iface", a.iface));
+      list.appendChild(li);
+    });
+  }
+
+  // ---------- 短信 ----------
+
+  function deliveryTag(d) {
+    var map = { 0: ["待发送", "amber"], 1: ["已送达", "green"], 2: ["放弃", "red"] };
+    var m = map[d.status] || ["未知", "amber"];
+    var text = d.ch + " " + m[0] + (d.tries ? " ×" + d.tries : "");
+    var tag = el("span", "tag " + m[1], text);
+    if (d.err) tag.title = d.err;
+    return tag;
+  }
+
+  function loadMessages() {
+    return api("/api/messages?limit=20").then(function (d) {
+      var box = $("messages");
+      box.textContent = "";
+      if (!d.items || !d.items.length) {
+        box.appendChild(el("p", "muted small", "还没有收到短信。"));
+        return;
+      }
+      d.items.forEach(function (m) {
+        var failed = (m.deliveries || []).some(function (x) { return x.status === 2; });
+        var card = el("div", "msg" + (failed ? " failed" : ""));
+        var head = el("div", "head");
+        head.appendChild(el("span", "peer", m.peer || "(未知号码)"));
+        head.appendChild(el("span", "time", m.iso));
+        if (m.code) head.appendChild(el("span", "tag", "验证码 " + m.code));
+        if (m.subId > 0) head.appendChild(el("span", "tag amber", "SIM " + m.subId));
+        if (m.rule) head.appendChild(el("span", "tag amber", "规则 " + m.rule));
+        card.appendChild(head);
+        card.appendChild(el("div", "body", m.body));
+
+        var dl = el("div", "dl");
+        (m.deliveries || []).forEach(function (x) { dl.appendChild(deliveryTag(x)); });
+        card.appendChild(dl);
+
+        var retry = el("button", "small", "重发全部通道");
+        retry.type = "button";
+        retry.addEventListener("click", function () {
+          retry.disabled = true;
+          api("/api/messages/retry", { method: "POST", body: { id: m.id } })
+            .then(function (r) { showOk("已重新排队：" + r.queued + " 条投递"); return loadMessages(); })
+            .catch(function (e) { showError(e.message); })
+            .then(function () { retry.disabled = false; });
+        });
+        card.appendChild(retry);
+        box.appendChild(card);
+      });
+    });
+  }
+
+  function loadOutbox() {
+    return api("/api/outbox?limit=20").then(function (d) {
+      var box = $("outbox");
+      box.textContent = "";
+      if (!d.items || !d.items.length) {
+        box.appendChild(el("p", "muted small", "还没有发件记录。"));
+        return;
+      }
+      var map = {
+        0: ["发送中", "amber"], 1: ["已发送", "green"],
+        2: ["失败", "red"], 3: ["结果未知", "amber"]
+      };
+      d.items.forEach(function (m) {
+        var card = el("div", "msg");
+        var head = el("div", "head");
+        head.appendChild(el("span", "peer", m.peer));
+        head.appendChild(el("span", "time", m.iso));
+        var st = map[m.status] || ["未知", "amber"];
+        head.appendChild(el("span", "tag " + st[1], st[0] + (m.parts > 1 ? " · " + m.parts + " 片" : "")));
+        if (m.subId > 0) head.appendChild(el("span", "tag amber", "SIM " + m.subId));
+        card.appendChild(head);
+        card.appendChild(el("div", "body", m.body));
+        if (m.err) card.appendChild(el("div", "muted small", m.err));
+        box.appendChild(card);
+      });
+    });
+  }
+
+  // ---------- 通道 ----------
+
+  function loadConfig() {
+    return api("/api/config").then(function (c) {
+      state.config = c;
+      state.channels = Array.isArray(c.channels) ? c.channels : [];
+      renderChannels();
+      renderRules();
+      fillSettings(c);
+    });
+  }
+
+  function typeName(t) {
+    return { webhook: "Webhook", dingtalk: "钉钉", telegram: "Telegram" }[t] || t;
+  }
+
+  function renderChannels() {
+    var box = $("channels");
+    box.textContent = "";
+    if (!state.channels.length) {
+      box.appendChild(el("p", "muted small", "还没有通道。点击右上角「新增通道」。"));
+      return;
+    }
+    state.channels.forEach(function (ch, i) {
+      var card = el("div", "ch");
+      var top = el("div", "top");
+      var left = el("div");
+      var title = el("span", "peer", ch.name);
+      left.appendChild(title);
+      left.appendChild(document.createTextNode(" "));
+      left.appendChild(el("span", "tag " + (ch.enabled === false ? "" : "green"),
+        ch.enabled === false ? "已禁用" : "已启用"));
+      top.appendChild(left);
+      var right = el("div");
+      var edit = el("button", "small", "编辑");
+      edit.type = "button";
+      edit.style.marginTop = "0";
+      edit.addEventListener("click", function () { openChannel(i); });
+      var del = el("button", "small danger", "删除");
+      del.type = "button";
+      del.style.marginTop = "0";
+      del.addEventListener("click", function () {
+        if (!confirm("删除通道 " + ch.name + "？")) return;
+        state.channels.splice(i, 1);
+        saveChannels();
+      });
+      right.appendChild(edit);
+      right.appendChild(del);
+      top.appendChild(right);
+      card.appendChild(top);
+      card.appendChild(el("div", "meta", typeName(ch.type) + " · " + (ch.url || ch.chatId || "")));
+      if (ch.template) card.appendChild(el("div", "meta", "模板：" + ch.template.split("\n")[0]));
+      box.appendChild(card);
+    });
+  }
+
+  function openChannel(index) {
+    state.editing = index;
+    var ch = index >= 0 ? state.channels[index] : { type: "webhook", enabled: true, maxTries: 10 };
+    $("chTitle").textContent = index >= 0 ? "编辑通道" : "新增通道";
+    $("chName").value = ch.name || "";
+    $("chType").value = ch.type || "webhook";
+    $("chUrl").value = ch.url || "";
+    $("chToken").value = ch.token || "";
+    $("chSecret").value = ch.secret || "";
+    $("chChat").value = ch.chatId || "";
+    $("chTemplate").value = ch.template || "";
+    $("chFormat").value = ch.format || "text";
+    $("chTitleText").value = ch.title || "";
+    $("chTag").value = ch.tag || "";
+    $("chEnabled").checked = ch.enabled !== false;
+    syncChannelFields();
+    $("chDialog").showModal();
+  }
+
+  function syncChannelFields() {
+    var t = $("chType").value;
+    document.querySelectorAll(".ch-url").forEach(function (n) { n.classList.toggle("hidden", t === "telegram"); });
+    document.querySelectorAll(".ch-token").forEach(function (n) { n.classList.toggle("hidden", t === "dingtalk" || t === "webhook"); });
+    document.querySelectorAll(".ch-secret").forEach(function (n) { n.classList.toggle("hidden", t !== "dingtalk"); });
+    document.querySelectorAll(".ch-chat").forEach(function (n) { n.classList.toggle("hidden", t !== "telegram"); });
+    document.querySelectorAll(".ch-ding").forEach(function (n) { n.classList.toggle("hidden", t !== "dingtalk"); });
+    if (t === "webhook") {
+      $("chToken").parentNode.classList.remove("hidden");
+      $("chToken").placeholder = "X-Token，可留空";
+    } else if (t === "telegram") {
+      $("chToken").parentNode.classList.remove("hidden");
+      $("chToken").placeholder = "Bot Token，如 123456:ABC...";
+    } else {
+      $("chToken").parentNode.classList.add("hidden");
+    }
+  }
+
+  function saveChannels() {
+    api("/api/config", { method: "POST", body: { channels: state.channels } })
+      .then(function () { showOk("通道已保存"); return loadConfig(); })
+      .catch(function (e) { showError(e.message); });
+  }
+
+  // ---------- 规则 ----------
+
+  function renderRules() {
+    var c = state.config || {};
+    $("rulesJson").value = JSON.stringify(c.rules || [], null, 2);
+    $("rulesDefault").value = c.rulesDefault || "all";
+  }
+
+  function saveRules() {
+    var rules;
+    try { rules = JSON.parse($("rulesJson").value || "[]"); }
+    catch (e) { showError("规则 JSON 格式错误：" + e.message); return; }
+    api("/api/config", {
+      method: "POST",
+      body: { rules: rules, rulesDefault: $("rulesDefault").value }
+    }).then(function () { showOk("规则已保存"); return loadConfig(); })
+      .catch(function (e) { showError(e.message); });
+  }
+
+  function testRules() {
+    api("/api/rules/test", {
+      method: "POST",
+      body: { peer: $("testPeer").value, body: $("testBody").value }
+    }).then(function (r) {
+      var out = $("testResult");
+      out.classList.remove("hidden");
+      out.textContent = JSON.stringify(r, null, 2);
+    }).catch(function (e) { showError(e.message); });
+  }
+
+  // ---------- 设置 ----------
+
+  function fillSettings(c) {
+    $("cfgDevice").value = c.device || "";
+    var web = c.web || {};
+    $("cfgPort").value = web.port || 8080;
+    $("cfgUser").value = web.user || "admin";
+    $("cfgPass").value = web.pass || "";
+    $("cfgToken").value = web.token || "";
+    var sms = c.sms || {};
+    $("cfgDedup").value = sms.dedupWindowSec == null ? 90 : sms.dedupWindowSec;
+    $("cfgSub").value = String(sms.defaultSubId == null ? -1 : sms.defaultSubId);
+    $("cfgSmsEnabled").checked = sms.enabled !== false;
+  }
+
+  function saveSettings(ev) {
+    ev.preventDefault();
+    api("/api/config", {
+      method: "POST",
+      body: {
+        device: $("cfgDevice").value,
+        web: {
+          port: Number($("cfgPort").value),
+          user: $("cfgUser").value,
+          pass: $("cfgPass").value,
+          token: $("cfgToken").value
+        },
+        sms: {
+          enabled: $("cfgSmsEnabled").checked,
+          dedupWindowSec: Number($("cfgDedup").value),
+          defaultSubId: Number($("cfgSub").value)
+        }
+      }
+    }).then(function (r) {
+      showOk(r.restart ? "设置已保存，面板正在重启…" : "设置已保存");
+      return loadConfig();
+    }).catch(function (e) { showError(e.message); });
+  }
+
+  // ---------- 日志 ----------
+
+  function loadLogs() {
+    return api("/api/logs?limit=200").then(function (d) {
+      $("logs").textContent = (d.lines || []).join("\n") || "暂无日志";
+      $("logs").scrollTop = $("logs").scrollHeight;
+    });
+  }
+
+  // ---------- 导航 ----------
+
+  var tabLoaders = {
+    overview: refreshStatus,
+    messages: loadMessages,
+    send: loadOutbox,
+    channels: loadConfig,
+    rules: loadConfig,
+    logs: loadLogs,
+    settings: loadConfig
+  };
+
+  function showTab(name) {
+    document.querySelectorAll(".tabs button").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-tab") === name);
+    });
+    ["overview", "messages", "send", "channels", "rules", "logs", "settings"].forEach(function (t) {
+      $("tab-" + t).classList.toggle("hidden", t !== name);
+    });
+    showError("");
+    var loader = tabLoaders[name];
+    if (loader) loader().catch(function (e) { showError(e.message || String(e)); });
+  }
+
+  // ---------- 事件 ----------
+
+  document.querySelectorAll(".tabs button").forEach(function (b) {
+    b.addEventListener("click", function () { showTab(b.getAttribute("data-tab")); });
+  });
+
+  $("msgRefresh").addEventListener("click", function () { loadMessages().catch(function (e) { showError(e.message); }); });
+  $("importInbox").addEventListener("click", function () {
+    api("/api/inbox/import", { method: "POST", body: { limit: 50 } })
+      .then(function (r) {
+        if (r.ok) showOk("补收完成，新入库 " + r.imported + " 条");
+        else showError(r.error || "补收失败");
+        return loadMessages();
+      })
+      .catch(function (e) { showError(e.message); });
+  });
+  $("outRefresh").addEventListener("click", function () { loadOutbox().catch(function (e) { showError(e.message); }); });
+  $("logRefresh").addEventListener("click", function () { loadLogs().catch(function (e) { showError(e.message); }); });
+  $("addChannel").addEventListener("click", function () { openChannel(-1); });
+  $("chType").addEventListener("change", syncChannelFields);
+  $("chCancel").addEventListener("click", function () { $("chDialog").close(); });
+  $("saveRules").addEventListener("click", saveRules);
+  $("runTest").addEventListener("click", testRules);
+  $("settingsForm").addEventListener("submit", saveSettings);
+
+  $("sendForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var to = $("sendTo").value.trim();
+    var body = $("sendBody").value;
+    if (!to) { showError("请输入号码"); return; }
+    if (!body) { showError("请输入短信内容"); return; }
+    var btn = ev.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    api("/api/send", {
+      method: "POST",
+      body: { to: to, body: body, subId: Number($("sendSub").value) }
+    }).then(function (r) {
+      showOk("已提交发送，id=" + r.id);
+      $("sendBody").value = "";
+      return loadOutbox();
+    }).catch(function (e) { showError(e.message); })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $("chForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var ch = {
+      name: $("chName").value.trim(),
+      type: $("chType").value,
+      url: $("chUrl").value.trim(),
+      token: $("chToken").value,
+      secret: $("chSecret").value,
+      chatId: $("chChat").value.trim(),
+      template: $("chTemplate").value,
+      format: $("chFormat").value,
+      title: $("chTitleText").value.trim(),
+      tag: $("chTag").value.trim(),
+      enabled: $("chEnabled").checked,
+      maxTries: 10
+    };
+    if (!ch.name) { showError("通道名称不能为空"); return; }
+    if (state.editing >= 0) state.channels[state.editing] = ch;
+    else state.channels.push(ch);
+    $("chDialog").close();
+    saveChannels();
+  });
+
+  // 启动
+  refreshStatus();
+  setInterval(function () {
+    if (!$("tab-overview").classList.contains("hidden")) refreshStatus();
+  }, 5000);
+})();
+</script>
+</body>
+</html>

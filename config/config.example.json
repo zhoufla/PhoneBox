@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "device": "MI 9",
+  "web": {
+    "enabled": true,
+    "port": 8080,
+    "user": "admin",
+    "pass": "首次启动随机生成",
+    "token": "首次启动随机生成"
+  },
+  "sms": {
+    "enabled": true,
+    "dedupWindowSec": 90,
+    "defaultSubId": -1
+  },
+  "rulesDefault": "all",
+  "channels": [
+    {
+      "name": "webhook",
+      "type": "webhook",
+      "url": "https://example.com/sms",
+      "token": "可选 X-Token",
+      "template": "{peer}\n{body}\n设备：{device}",
+      "tag": "",
+      "maxTries": 10,
+      "enabled": false
+    },
+    {
+      "name": "dingtalk",
+      "type": "dingtalk",
+      "url": "https://oapi.dingtalk.com/robot/send?access_token=xxx",
+      "secret": "SECxxx",
+      "format": "text",
+      "title": "",
+      "template": "{peer}\n{body}\n设备：{device}",
+      "maxTries": 10,
+      "enabled": false
+    },
+    {
+      "name": "telegram",
+      "type": "telegram",
+      "token": "123456:ABC-DEF",
+      "chatId": "123456789",
+      "template": "{peer}\n{body}\n设备：{device}",
+      "maxTries": 10,
+      "enabled": false
+    }
+  ],
+  "rules": [
+    {
+      "name": "验证码优先",
+      "enabled": true,
+      "peer": ["^106"],
+      "body": ["验证码|动态码"],
+      "channels": ["dingtalk"],
+      "priority": 10,
+      "stop": false
+    },
+    {
+      "name": "退订丢弃",
+      "enabled": true,
+      "body": ["退订|TD$"],
+      "action": "drop"
+    }
+  ],
+  "ddns": {
+    "enabled": false,
+    "provider": "cloudflare",
+    "token": "",
+    "zone": "",
+    "intervalMin": 10,
+    "family": "v6",
+    "records": []
+  },
+  "monitor": {
+    "enabled": true
+  },
+  "retention": {
+    "days": 30
+  },
+  "log": {
+    "level": "info",
+    "maxLines": 500
+  }
+}
