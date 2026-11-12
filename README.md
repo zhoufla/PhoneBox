@@ -102,9 +102,10 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 
 工作流：[`.github/workflows/build.yml`](.github/workflows/build.yml)
 
-- 推 `main` / PR / 手动触发：编译 APK，上传 Actions artifact，不创建 Release
-- 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致，编译并创建 GitHub Release
-- 未配置签名密钥时仍会构建，但使用临时签名，只上传 artifact，不发布 Release
+- 推 `main` / PR：编译 APK 并上传 Actions artifact，不创建 Release
+- 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致后自动创建 Release
+- Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.7.0`
+- `release` 模式和 `v*` 标签都要求签名 Secrets；缺少密钥或版本不匹配会明确失败，不会发布临时签名 APK
 
 在仓库 `Settings → Secrets and variables → Actions` 添加：
 
@@ -115,7 +116,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 | `KEY_PASS` | key 密码，通常同上 |
 | `KEY_ALIAS` | key 别名（本地默认 `phonebox`） |
 
-生成并推送发布标签：
+**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`，填写与 Manifest `versionName` 一致的标签（当前代码为 `v0.7.0`），运行工作流。工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
 
 ```sh
 # 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交

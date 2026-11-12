@@ -1,12 +1,25 @@
 name: build
 
-# 推 main / PR 只出构建产物；推 v* 标签才创建 GitHub Release。
+# 推 main / PR 默认只出构建产物；推 v* 标签或手动选择“发布 Release”才发布。
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      action:
+        description: 构建 APK，或发布正式 Release
+        type: choice
+        options:
+          - build
+          - release
+        default: build
+        required: true
+      release_tag:
+        description: 发布标签，例如 v0.7.0（必须与 Manifest 版本一致）
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -78,17 +91,32 @@ jobs:
             echo "::warning::未配置 KEYSTORE_BASE64，本次使用临时签名，不能覆盖安装已发布版本"
           fi
 
-      - name: 检查 tag 与版本
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: 检查发布版本与签名
+        id: release_meta
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.action == 'release')
+        env:
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
-          VER=$(grep -o 'versionName="[^"]*"' AndroidManifest.xml | head -1 | cut -d'"' -f2)
-          if [ "v$VER" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME 与 AndroidManifest versionName $VER 不一致"
+          case "$GITHUB_REF" in
+            refs/tags/v*) TAG="$GITHUB_REF_NAME" ;;
+            *) TAG="$RELEASE_TAG_INPUT" ;;
+          esac
+          if [ -z "$TAG" ]; then
+            echo "::error::发布时必须填写标签，例如 v0.7.0"
             exit 1
           fi
-          if [ "${{ steps.signing.outputs.signed }}" != "1" ]; then
-            echo "::warning::tag 构建缺少签名密钥，只上传产物，不创建 Release"
+          VER=$(grep -o 'versionName="[^"]*"' AndroidManifest.xml | head -1 | cut -d'"' -f2)
+          if [ "v$VER" != "$TAG" ]; then
+            echo "::error::标签 $TAG 与 AndroidManifest versionName $VER 不一致"
+            exit 1
           fi
+          if [ "$SIGNED" != "1" ]; then
+            echo "::error::正式 Release 必须配置 KEYSTORE_BASE64，并使用手机当前安装版的签名密钥"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: 构建 APK
         env:
@@ -103,7 +131,7 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: phonebox-${{ github.ref_name }}-${{ github.sha }}
+          name: phonebox-${{ inputs.release_tag || github.ref_name }}-${{ github.sha }}
           path: |
             dist/*.apk
             dist/SHA256SUMS
@@ -111,22 +139,23 @@ jobs:
           if-no-files-found: error
 
       - name: 创建 GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.signed == '1'
+        if: steps.release_meta.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
         run: |
-          TAG="$GITHUB_REF_NAME"
           FILES="dist/com.zhoufla.phonebox-*.apk dist/SHA256SUMS dist/latest.json"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" $FILES --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" $FILES --clobber
           else
-            gh release create "$TAG" $FILES --title "PhoneBox $TAG" --generate-notes
+            gh release create "$RELEASE_TAG" $FILES --title "PhoneBox $RELEASE_TAG" \
+              --generate-notes --target "$GITHUB_SHA"
           fi
 
       - name: 写入构建摘要
         run: |
           {
-            echo "### PhoneBox ${{ github.ref_name }}"
+            echo "### PhoneBox ${{ inputs.release_tag || github.ref_name }}"
             echo '```json'
             cat dist/latest.json
             echo '```'
