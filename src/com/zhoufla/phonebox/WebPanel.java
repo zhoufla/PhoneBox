@@ -11,12 +11,17 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /** 内嵌 Web 面板：HTTP 服务 + 静态页 + JSON API。 */
 public final class WebPanel {
 
     private static volatile Http http;
-    private static volatile byte[] indexHtml;
+    private static final Map<String, byte[]> ASSETS = new HashMap<String, byte[]>();
 
     private WebPanel() {
     }
@@ -124,6 +129,15 @@ public final class WebPanel {
         if ("/favicon.ico".equals(req.path)) {
             return Http.Resp.text(204, "");
         }
+        // PWA 静态资源不含敏感数据，放在鉴权之前，浏览器拉 manifest/图标时不会 401。
+        if ("GET".equals(req.method) && "/manifest.webmanifest".equals(req.path)) {
+            return staticAsset(ctx, "web/manifest.webmanifest",
+                    "application/manifest+json; charset=utf-8");
+        }
+        if ("GET".equals(req.method) && ("/icon-192.png".equals(req.path)
+                || "/icon-512.png".equals(req.path))) {
+            return staticAsset(ctx, "web" + req.path, "image/png");
+        }
         if (!Auth.ok(req, cfg)) {
             return Auth.unauthorized();
         }
@@ -133,7 +147,8 @@ public final class WebPanel {
 
         if (get && ("/".equals(req.path) || "/index.html".equals(req.path))) {
             try {
-                return Http.Resp.bytes(200, "text/html; charset=utf-8", index(ctx));
+                return Http.Resp.bytes(200, "text/html; charset=utf-8",
+                        asset(ctx, "web/index.html"));
             } catch (IOException e) {
                 return Http.Resp.text(500, "面板资源缺失：" + e.getMessage());
             }
@@ -221,6 +236,12 @@ public final class WebPanel {
             if (post && "/api/rules/test".equals(req.path)) {
                 return testRules(cfg, req);
             }
+            if (post && "/api/test/event".equals(req.path)) {
+                return testEvent(ctx, req);
+            }
+            if (post && "/api/alerts/test".equals(req.path)) {
+                return testAlert(ctx, req);
+            }
             if (post && "/api/config".equals(req.path)) {
                 return saveConfig(ctx, cfg, req);
             }
@@ -299,6 +320,42 @@ public final class WebPanel {
         return Http.Resp.json(200, o.toString());
     }
 
+    /**
+     * 发送测试事件：构造一条假短信，走 SmsReceiver 的真实入库/规则/投递链路。
+     * 正文附短时标，避免 90 秒去重窗口把连点两次合并成同一条。
+     */
+    private static Http.Resp testEvent(Context ctx, Http.Req req) throws Exception {
+        JSONObject body = new JSONObject(req.body);
+        String peer = body.optString("peer", "").trim();
+        if (peer.length() == 0) {
+            peer = "10086";
+        }
+        String text = body.optString("body", "");
+        if (text.trim().length() == 0) {
+            text = "【PhoneBox 测试】验证码 123456，用于检查转发通道。";
+        }
+        String stamp = new SimpleDateFormat("HHmmss", Locale.US).format(new Date());
+        text += "\n[测试 #" + stamp + "]";
+
+        SmsEvent e = new SmsEvent();
+        e.peer = peer;
+        e.body = text;
+        e.ts = System.currentTimeMillis();
+        e.code = SmsEvent.extractCode(text);
+        e.subId = body.optInt("subId", -1);
+
+        JSONObject o = SmsReceiver.ingest(ctx, e, true);
+        Logs.add("面板发送测试事件：" + peer + "（" + text.length() + " 字）");
+        // 统一 200，让面板能读到 warning（转发关闭 / 无通道）而不是只看到 HTTP 400。
+        return Http.Resp.json(200, o.toString());
+    }
+
+    /** 手动触发一条测试告警，绕过阈值与冷却，用于验证通知与通道链路。 */
+    private static Http.Resp testAlert(Context ctx, Http.Req req) throws Exception {
+        String text = new JSONObject(req.body).optString("message", "").trim();
+        return Http.Resp.json(200, Alert.fireTest(ctx, text).toString());
+    }
+
     private static Http.Resp saveConfig(Context ctx, AppConfig cfg, Http.Req req)
             throws Exception {
         JSONObject body = new JSONObject(req.body);
@@ -336,27 +393,36 @@ public final class WebPanel {
 
     // ---------- 状态 ----------
 
-    private static byte[] index(Context ctx) throws IOException {
-        byte[] cached = indexHtml;
-        if (cached != null) {
-            return cached;
-        }
-        synchronized (WebPanel.class) {
-            if (indexHtml == null) {
-                InputStream in = ctx.getAssets().open("web/index.html");
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buf = new byte[4096];
-                int n;
-                try {
-                    while ((n = in.read(buf)) > 0) {
-                        out.write(buf, 0, n);
-                    }
-                } finally {
-                    in.close();
-                }
-                indexHtml = out.toByteArray();
+    /** assets 下静态资源读取 + 进程内缓存（页面、manifest、图标共用）。 */
+    private static byte[] asset(Context ctx, String path) throws IOException {
+        synchronized (ASSETS) {
+            if (ASSETS.containsKey(path)) {
+                return ASSETS.get(path);
             }
-            return indexHtml;
+        }
+        InputStream in = ctx.getAssets().open(path);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int n;
+        try {
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+        } finally {
+            in.close();
+        }
+        byte[] data = out.toByteArray();
+        synchronized (ASSETS) {
+            ASSETS.put(path, data);
+        }
+        return data;
+    }
+
+    private static Http.Resp staticAsset(Context ctx, String path, String type) {
+        try {
+            return Http.Resp.bytes(200, type, asset(ctx, path));
+        } catch (IOException e) {
+            return Http.Resp.text(404, "资源不存在");
         }
     }
 
@@ -410,6 +476,7 @@ public final class WebPanel {
             }
 
             o.put("watchdog", Watchdog.snapshot(ctx));
+            o.put("alerts", Alert.snapshot(ctx));
 
             JSONObject ddns = new JSONObject();
             ddns.put("enabled", cfg.ddnsEnabled());

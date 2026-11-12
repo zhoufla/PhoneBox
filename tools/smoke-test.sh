@@ -5,6 +5,7 @@
 #   sh tools/smoke-test.sh http://192.168.1.23:8080 admin:随机密码
 #   adb forward tcp:8080 tcp:8080
 #   sh tools/smoke-test.sh http://127.0.0.1:8080 admin:随机密码
+#   SMOKE_TEST_EVENT=1 sh tools/smoke-test.sh ...   # 额外触发测试事件/告警（会真实转发到启用通道）
 set -e
 
 BASE="${1:-http://127.0.0.1:8080}"
@@ -55,6 +56,21 @@ echo
 
 echo "== index"
 curl -fsS -u "$AUTH" "$BASE/" | head -5
+
+echo "== manifest（无需认证）"
+curl -fsS "$BASE/manifest.webmanifest" | head -5
+
+if [ "${SMOKE_TEST_EVENT:-0}" = "1" ]; then
+    echo "== 测试事件（会真实转发到启用通道）"
+    curl -fsS -u "$AUTH" -H "$H" -H 'Content-Type: application/json' \
+        -d '{"peer":"10086","body":"【PhoneBox 测试】验证码 123456"}' \
+        "$BASE/api/test/event"
+    echo
+    echo "== 测试告警"
+    curl -fsS -u "$AUTH" -H "$H" -H 'Content-Type: application/json' \
+        -d '{"message":"冒烟测试告警"}' "$BASE/api/alerts/test"
+    echo
+fi
 
 echo
 echo "OK：$BASE"

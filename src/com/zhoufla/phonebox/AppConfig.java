@@ -111,6 +111,51 @@ public final class AppConfig {
         return monitor == null || monitor.optBoolean("enabled", true);
     }
 
+    // ---------- 异常告警 ----------
+
+    /** 旧配置没有 alerts 段时默认开启（只发本地通知，不外推）。 */
+    public synchronized boolean alertsEnabled() {
+        JSONObject a = data.optJSONObject("alerts");
+        return a == null || a.optBoolean("enabled", true);
+    }
+
+    public synchronized JSONObject alerts() {
+        JSONObject a = data.optJSONObject("alerts");
+        return a == null ? new JSONObject() : a;
+    }
+
+    public synchronized int alertsIntervalMin() {
+        int v = alerts().optInt("intervalMin", 5);
+        return Math.max(1, Math.min(60, v));
+    }
+
+    public synchronized int alertsCooldownMin() {
+        int v = alerts().optInt("cooldownMin", 30);
+        return Math.max(1, Math.min(1440, v));
+    }
+
+    public synchronized boolean alertsNotify() {
+        return alerts().optBoolean("notify", true);
+    }
+
+    /** 为空表示不外推；填通道名才把告警发到指定通道。 */
+    public synchronized List<String> alertsChannels() {
+        List<String> out = new ArrayList<String>();
+        JSONArray arr = alerts().optJSONArray("channels");
+        if (arr == null) {
+            return out;
+        }
+        Set<String> seen = new LinkedHashSet<String>();
+        for (int i = 0; i < arr.length(); i++) {
+            String n = arr.optString(i, "").trim();
+            if (!n.isEmpty()) {
+                seen.add(n);
+            }
+        }
+        out.addAll(seen);
+        return out;
+    }
+
     // ---------- DDNS ----------
 
     public synchronized boolean ddnsEnabled() {
@@ -366,6 +411,52 @@ public final class AppConfig {
                 cur.put("enabled", monitor.optBoolean("enabled", true));
             }
 
+            JSONObject alerts = incoming.optJSONObject("alerts");
+            if (alerts != null) {
+                JSONObject cur = next.optJSONObject("alerts");
+                if (cur == null) {
+                    cur = new JSONObject();
+                    next.put("alerts", cur);
+                }
+                cur.put("enabled", alerts.optBoolean("enabled", true));
+                cur.put("notify", alerts.optBoolean("notify", true));
+                cur.put("intervalMin", Math.max(1, Math.min(60,
+                        alerts.optInt("intervalMin", 5))));
+                cur.put("cooldownMin", Math.max(1, Math.min(1440,
+                        alerts.optInt("cooldownMin", 30))));
+                JSONArray names = alerts.optJSONArray("channels");
+                if (names != null) {
+                    JSONArray cleaned = new JSONArray();
+                    Set<String> seen = new LinkedHashSet<String>();
+                    for (int i = 0; i < names.length(); i++) {
+                        String n = names.optString(i, "").trim();
+                        if (!n.isEmpty()) {
+                            seen.add(n);
+                        }
+                    }
+                    for (String n : seen) {
+                        cleaned.put(n);
+                    }
+                    cur.put("channels", cleaned);
+                }
+                JSONObject t = alerts.optJSONObject("thresholds");
+                if (t != null) {
+                    JSONObject ct = cur.optJSONObject("thresholds");
+                    if (ct == null) {
+                        ct = new JSONObject();
+                        cur.put("thresholds", ct);
+                    }
+                    ct.put("lowPct", clampInt(t.optInt("lowPct", 20), 5, 80));
+                    ct.put("highPct", clampInt(t.optInt("highPct", 80), 50, 100));
+                    ct.put("tempC", clampInt(t.optInt("tempC", 42), 30, 70));
+                    ct.put("pending", clampInt(t.optInt("pending", 20), 1, 500));
+                    ct.put("heartbeatSec", clampInt(t.optInt("heartbeatSec", 180), 60, 3600));
+                    ct.put("failStreak", clampInt(t.optInt("failStreak", 3), 1, 50));
+                    ct.put("highSustainMin", clampInt(t.optInt("highSustainMin", 30), 1, 240));
+                    ct.put("netSustainMin", clampInt(t.optInt("netSustainMin", 5), 1, 120));
+                }
+            }
+
             JSONObject retention = incoming.optJSONObject("retention");
             if (retention != null) {
                 JSONObject cur = next.optJSONObject("retention");
@@ -383,6 +474,10 @@ public final class AppConfig {
         } catch (JSONException e) {
             throw new IllegalArgumentException("配置 JSON 无效：" + e.getMessage());
         }
+    }
+
+    private static int clampInt(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
     }
 
     /** 值为空或 ****** 时保留旧值，其余按键写入。 */
@@ -575,6 +670,24 @@ public final class AppConfig {
             JSONObject monitor = new JSONObject();
             monitor.put("enabled", true);
             root.put("monitor", monitor);
+
+            JSONObject alerts = new JSONObject();
+            alerts.put("enabled", true);
+            alerts.put("notify", true);
+            alerts.put("intervalMin", 5);
+            alerts.put("cooldownMin", 30);
+            alerts.put("channels", new JSONArray());
+            JSONObject th = new JSONObject();
+            th.put("lowPct", 20);
+            th.put("highPct", 80);
+            th.put("tempC", 42);
+            th.put("pending", 20);
+            th.put("heartbeatSec", 180);
+            th.put("failStreak", 3);
+            th.put("highSustainMin", 30);
+            th.put("netSustainMin", 5);
+            alerts.put("thresholds", th);
+            root.put("alerts", alerts);
 
             JSONObject retention = new JSONObject();
             retention.put("days", 30);

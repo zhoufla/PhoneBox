@@ -6,7 +6,7 @@
 
 - HTTP Basic：`admin` / App 首页显示的随机密码
 - Bearer Token：`Authorization: Bearer <token>`
-- `/api/ping` 无需认证
+- `/api/ping`、`/manifest.webmanifest`、`/icon-192.png`、`/icon-512.png`、`/favicon.ico` 无需认证
 
 所有写操作（POST）必须带：
 
@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
@@ -104,12 +104,20 @@ Content-Type: application/json
     "message": "已更新 1 条记录", "warning": "",
     "at": 1760000000000, "updated": 1, "unchanged": 0
   },
+  "alerts": {
+    "enabled": true, "notify": true, "intervalMin": 5, "cooldownMin": 30,
+    "channels": [], "active": [], "lastCheckAt": 1760000000000, "lastError": ""
+  },
   "config": {"web": {"port": 8080, "user": "admin"}}
 }
 ```
 
 `monitor` 在配置 `monitor.enabled=false` 时不会出现。字段可能缺失（权限不足或 ROM 不提供），
 前端按“—”处理。`cpu.usagePct` 的第一次调用会补一次 120ms 采样。
+
+`alerts.active` 是当前未恢复的告警，元素形如
+`{"key":"battery_high","title":"长期满充","message":"...","at":1760000000000}`；
+`channels` 为告警外推通道名列表，空数组表示只发本地通知。
 
 信号和温度都是尽力而为：
 
@@ -123,7 +131,11 @@ Content-Type: application/json
 
 ### `POST /api/config`
 
-只覆盖传入的顶层字段，支持：`device`、`web`、`sms`、`channels`、`rules`、`rulesDefault`、`ddns`、`monitor`、`retention`。
+只覆盖传入的顶层字段，支持：`device`、`web`、`sms`、`channels`、`rules`、`rulesDefault`、`ddns`、`monitor`、`alerts`、`retention`。
+
+`alerts` 段字段：`enabled`、`notify`、`intervalMin`(1-60)、`cooldownMin`(1-1440)、
+`channels`(通道名数组，留空不外推)、`thresholds`（`lowPct`、`highPct`、`tempC`、`pending`、
+`heartbeatSec`、`failStreak`、`highSustainMin`、`netSustainMin`）。
 
 密钥字段留空或传 `******` 表示保留原值。
 
@@ -225,6 +237,37 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 {"drop":false,"rule":"验证码优先","matched":["验证码优先"],
  "targets":["dingtalk"],"code":"123456"}
 ```
+
+### `POST /api/test/event`
+
+构造一条假短信，走真实的「入库 → 去重 → 规则 → 通道」链路，用来验证转发配置，不消耗 SIM 短信。
+
+```json
+{"peer": "10086", "body": "【测试】验证码 123456", "subId": -1}
+```
+
+```json
+{"test":true,"channels":1,"ok":true,"id":42,"drop":false,
+ "rule":"验证码优先","targets":["dingtalk"]}
+```
+
+- `peer` 留空默认 `10086`，`body` 留空使用内置测试文本；正文会自动追加 `\n[测试 #HHmmss]`，避免 90 秒去重窗口把连续两次测试合并。
+- 测试事件使用 0 秒去重窗口，其余与普通短信完全一致：写 `ev`/`dl` 表、可在短信列表重发、计入统计。
+- 转发关闭时返回 `{"ok":false,"warning":"短信转发已关闭，事件未入库"}`；没有启用通道时仍入库，但带 `warning`，不会外发。两种情况均为 HTTP 200，方便面板展示原因。
+
+### `POST /api/alerts/test`
+
+手动触发一条测试告警，绕过阈值与冷却，验证通知与外推链路：
+
+```json
+{"message": "测试告警"}
+```
+
+```json
+{"ok":true,"notified":true,"delivered":0}
+```
+
+告警不写短信库、不进重试队列；只有 `alerts.channels` 非空时才外推，推送失败只写日志。
 
 ## 保活
 

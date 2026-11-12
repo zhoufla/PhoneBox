@@ -239,3 +239,11 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - [x] M4 Cloudflare DDNS（IPv6 优先、AAAA 更新、变更检测、失败通知）
 - [x] M5 保活加固（心跳闹钟、周期任务、线程自愈、面板重新布防；72h 浸泡待真机）
 - [x] M6 在线升级（GitHub Release、APK 校验、系统确认安装；正式 Release 需配置签名 Secrets）
+- [x] M7 0.8.0 增量（测试事件、异常告警、PWA-lite）
+
+### M7 范围说明（0.8.0）
+
+- 测试事件复用 `SmsReceiver.ingest`，不新增数据库字段；正文附时间标记绕过去重窗口。
+- 告警只在独立线程采样，阈值为低电/满充/高温/断网/服务心跳/投递失败；去抖与冷却状态存 SharedPreferences，只读 Monitor/ServiceState/Db，绝不写 `dl` 表或触发重试，避免告警自激。默认只发本地通知，`alerts.channels` 非空时才外推。
+- PWA 只做 manifest/图标/视口适配；Service Worker 需要安全上下文（HTTPS 或 localhost），明文 HTTP 面板不做离线缓存。
+- 本次明确不做：鉴权失败限速、Keystore 加密、密码哈希、绑定地址可配、首页凭据折叠、SSE、通道熔断、配置导出、纯 JVM 单测、targetSdk 升级。

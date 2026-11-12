@@ -25,7 +25,7 @@ public final class RelayService extends Service {
     public static final String ACTION_WAKE = "com.zhoufla.phonebox.WAKE";
 
     private static final String CHANNEL_ID = "phonebox_service";
-    private static final String CHANNEL_ALERT = "phonebox_alert";
+    static final String CHANNEL_ALERT = "phonebox_alert";
     private static final int NOTIFY_ID = 1001;
     private static final int DDNS_NOTIFY_ID = 1002;
 
@@ -34,6 +34,8 @@ public final class RelayService extends Service {
     private volatile long lastDdnsAt = 0;
     private volatile boolean ddnsRunning = false;
     private volatile boolean ddnsFailing = false;
+    private volatile long lastAlertAt = 0;
+    private volatile boolean alertRunning = false;
 
     private Handler handler;
     private NotificationManager notificationManager;
@@ -54,6 +56,7 @@ public final class RelayService extends Service {
                 startWorker();
             }
             updateNotification();
+            maybeAlerts();
             if (handler != null) {
                 handler.postDelayed(this, 60000);
             }
@@ -308,6 +311,37 @@ public final class RelayService extends Service {
             }
         } catch (Exception ignored) {
         }
+    }
+
+    // ---------- 异常告警 ----------
+
+    /** 到点在独立线程跑，避免 Monitor 采样与网络外推阻塞主线程/短信投递。 */
+    private void maybeAlerts() {
+        AppConfig cfg = AppConfig.get(this);
+        if (!cfg.alertsEnabled() || alertRunning) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long interval = cfg.alertsIntervalMin() * 60000L;
+        if (lastAlertAt > 0 && now - lastAlertAt < interval) {
+            return;
+        }
+        lastAlertAt = now;
+        alertRunning = true;
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Alert.check(RelayService.this);
+                } catch (Throwable ex) {
+                    Logs.add("告警检查异常：" + ex);
+                } finally {
+                    alertRunning = false;
+                }
+            }
+        }, "phonebox-alert");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     // ---------- DDNS ----------

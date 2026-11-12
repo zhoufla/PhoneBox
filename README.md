@@ -6,6 +6,8 @@
 - 网页发短信、双卡选择、发送结果回写
 - 电量、温度、信号、CPU/内存/存储/网络状态
 - Cloudflare DDNS（WiFi 下 IPv6 直连优先）
+- 测试事件、异常告警（本地通知，可选外推到指定通道）
+- 面板支持「添加到主屏幕」（PWA-lite：图标、主题色、独立窗口）
 - App 只做启动器和状态页，配置全部在网页完成
 
 项目参考 [msm8916-box](https://github.com/zhoufla/msm8916-box) 的数据层、规则引擎和内嵌 Web 面板，
@@ -56,6 +58,12 @@
 
 **在线升级（0.7.0）**：App 首页可检查 GitHub 最新正式 Release，下载后校验 APK 文件大小、SHA-256、包名和版本码，再交由 Android 系统安装器；安装前仍需用户确认。首次安装更新时需在系统设置允许 PhoneBox 安装未知来源应用。GitHub 必须已有正式 Release，且发布 APK 使用同一签名密钥；没有 Release 时 App 会提示检查失败，不会自动下载未校验文件。
 
+**0.8.0 增量**：
+
+- **发送测试事件**：概览页填入号码/正文/SIM，构造一条假短信走完整的「入库 → 去重 → 规则 → 通道」链路，不消耗真短信。正文自动附 `[测试 #HHmmss]`，避免被 90 秒去重窗口合并；接口 `POST /api/test/event`。
+- **异常告警**：按配置间隔在独立线程检查低电量、长期满充、高温、断网、服务/心跳异常、投递积压与连续失败；持续判定 + 冷却去抖，复用 `phonebox_alert` 通知渠道。默认**只发本地通知**，在设置页填写通道名才会外推；告警不写短信库、不进重试队列。接口 `POST /api/alerts/test` 可手动触发一条测试告警。
+- **PWA-lite**：`manifest.webmanifest` + 192/512 PNG 图标 + 窄屏与安全区适配，手机浏览器「添加到主屏幕」后可用独立图标与独立窗口打开。Service Worker 只在 HTTPS/localhost 可用，面板走明文 HTTP，因此**不做离线缓存，也不安装成 WebAPK**；需要完整 PWA 请自行加 HTTPS 反代。
+
 ## 目标平台
 
 | 项 | 值 |
@@ -104,7 +112,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 
 - 推 `main` / PR：编译 APK 并上传 Actions artifact，不创建 Release
 - 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致后自动创建 Release
-- Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.7.0`
+- Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.8.0`
 - `release` 模式和 `v*` 标签都要求签名 Secrets；缺少密钥或版本不匹配会明确失败，不会发布临时签名 APK
 - 每次成功的非 PR 构建后自动清理，只保留最近 3 次 Actions 运行（连同其 artifact）和最近 3 个 Release；旧 Release 对应的 Git 标签会保留
 
@@ -117,20 +125,20 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 | `KEY_PASS` | key 密码，通常同上 |
 | `KEY_ALIAS` | key 别名（本地默认 `phonebox`） |
 
-**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`。发布标签可留空，工作流会自动使用 Manifest 的 `versionName` 加 `v` 前缀（当前为 `v0.7.0`）；也可手动填写匹配的标签。运行后工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
+**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`。发布标签可留空，工作流会自动使用 Manifest 的 `versionName` 加 `v` 前缀（当前为 `v0.8.0`）；也可手动填写匹配的标签。运行后工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
 
 ```sh
 # 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交
-git tag v0.7.0
-git push origin v0.7.0
+git tag v0.8.0
+git push origin v0.8.0
 ```
 
 Release 附件包含 APK、`SHA256SUMS` 和 `latest.json`。重新推同一标签前先删除旧标签和 Release：
 
 ```sh
-gh release delete v0.7.0 --yes
-git push origin :refs/tags/v0.7.0
-git tag -f v0.7.0 && git push origin v0.7.0
+gh release delete v0.8.0 --yes
+git push origin :refs/tags/v0.8.0
+git tag -f v0.8.0 && git push origin v0.8.0
 ```
 
 > Release 用的签名必须和手机已安装版本一致，否则只能卸载重装。CI 只从 Secrets 读取密钥，
@@ -139,7 +147,7 @@ git tag -f v0.7.0 && git push origin v0.7.0
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.7.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.8.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 

@@ -6,6 +6,10 @@ import android.content.Intent;
 import android.provider.Telephony;
 import android.telephony.SmsMessage;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.List;
 
 /**
@@ -63,33 +67,67 @@ public final class SmsReceiver extends BroadcastReceiver {
         e.code = SmsEvent.extractCode(e.body);
         e.subId = subscriptionId(intent);
 
-        AppConfig cfg = AppConfig.get(ctx);
-        if (!cfg.smsEnabled()) {
-            Logs.add("短信转发已关闭，丢弃 " + e.peer);
-            return;
-        }
+        ingest(ctx, e, false);
+    }
 
-        Db db = Db.get(ctx);
-        long id = db.insertEvent(e, cfg.dedupWindowSec());
-        if (id <= 0) {
-            Logs.add("短信入库失败：" + e.peer);
-            return;
-        }
+    /**
+     * 真短信与面板测试事件共用：检查开关 → 入库去重 → 规则路由 → 建投递目标 → 唤醒服务。
+     *
+     * 测试事件不消耗 SIM 短信，但走完全相同的规则、模板与重试链路；
+     * 它传 0 秒去重窗口，由调用方在正文中附加短标记保证 hash 唯一。
+     */
+    static JSONObject ingest(Context ctx, SmsEvent e, boolean test) {
+        JSONObject out = new JSONObject();
+        try {
+            AppConfig cfg = AppConfig.get(ctx);
+            List<String> active = cfg.activeChannelNames();
+            out.put("test", test);
+            out.put("channels", active.size());
 
-        List<Router.Rule> rules = cfg.rules();
-        Router.Result r = Router.route(e, rules, cfg.activeChannelNames(), cfg.rulesDefault());
-        if (r.drop) {
-            db.setEventRule(id, r.rule == null ? "drop" : r.rule);
-            Logs.add("收到 " + e.peer + "，" + e.body.length() + " 字，规则丢弃"
-                    + (r.rule == null ? "" : "：" + r.rule));
-        } else {
-            db.ensureTargets(id, r.targets);
-            Logs.add("收到 " + e.peer + "，" + e.body.length() + " 字，转发 "
-                    + r.targets.size() + " 个通道"
+            if (!cfg.smsEnabled()) {
+                out.put("ok", false);
+                out.put("warning", "短信转发已关闭，事件未入库");
+                Logs.add((test ? "测试事件" : "短信转发已关闭，丢弃 " + e.peer));
+                return out;
+            }
+
+            Db db = Db.get(ctx);
+            long id = db.insertEvent(e, test ? 0 : cfg.dedupWindowSec());
+            if (id <= 0) {
+                out.put("ok", false);
+                out.put("error", "事件入库失败");
+                Logs.add("事件入库失败：" + e.peer);
+                return out;
+            }
+
+            out.put("ok", true);
+            out.put("id", id);
+            Router.Result r = Router.route(e, cfg.rules(), active, cfg.rulesDefault());
+            out.put("drop", r.drop);
+            out.put("rule", r.rule == null ? (r.drop ? "drop" : "") : r.rule);
+            JSONArray targets = new JSONArray();
+            for (Router.Target t : r.targets) {
+                targets.put(t.ch);
+            }
+            out.put("targets", targets);
+
+            if (r.drop) {
+                db.setEventRule(id, r.rule == null ? "drop" : r.rule);
+            } else {
+                db.ensureTargets(id, r.targets);
+            }
+            if (active.isEmpty()) {
+                out.put("warning", "没有启用的转发通道，事件已入库但不会外发");
+            }
+            Logs.add((test ? "测试事件 " : "收到 ") + e.peer + "，" + e.body.length()
+                    + " 字" + (r.drop ? "，规则丢弃" : "，转发 " + r.targets.size() + " 个通道")
                     + (r.rule == null ? "" : "（规则 " + r.rule + "）"));
+            RelayService.start(ctx);
+            return out;
+        } catch (JSONException ex) {
+            Logs.add("事件处理失败：" + ex);
+            return out;
         }
-
-        RelayService.start(ctx);
     }
 
     /** framework 把订阅 ID 放在 "subscription" extra，不同 ROM 可能是 int / long / String。 */

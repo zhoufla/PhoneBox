@@ -77,6 +77,23 @@
   "monitor": {
     "enabled": true
   },
+  "alerts": {
+    "enabled": true,
+    "notify": true,
+    "intervalMin": 5,
+    "cooldownMin": 30,
+    "channels": [],
+    "thresholds": {
+      "lowPct": 20,
+      "highPct": 80,
+      "tempC": 42,
+      "pending": 20,
+      "heartbeatSec": 180,
+      "failStreak": 3,
+      "highSustainMin": 30,
+      "netSustainMin": 5
+    }
+  },
   "retention": {
     "days": 30
   },

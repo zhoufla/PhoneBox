@@ -17,7 +17,7 @@ on:
         default: build
         required: true
       release_tag:
-        description: 可选；留空时自动使用 Manifest 版本，例如 v0.7.0
+        description: 可选；留空时自动使用 Manifest 版本，例如 v0.8.0
         type: string
         required: false
 
@@ -47,6 +47,7 @@ jobs:
           sh -n build.sh
           for f in tools/*.sh; do sh -n "$f"; done
           python3 -m json.tool config/config.example.json >/dev/null
+          python3 -m json.tool assets/web/manifest.webmanifest >/dev/null
           python3 - <<'PY'
           import re
           s = open('assets/web/index.html', encoding='utf-8').read()
