@@ -106,6 +106,11 @@ public final class AppConfig {
         return "drop".equals(v) ? "drop" : "all";
     }
 
+    public synchronized boolean monitorEnabled() {
+        JSONObject monitor = data.optJSONObject("monitor");
+        return monitor == null || monitor.optBoolean("enabled", true);
+    }
+
     public synchronized List<Channel> channels() {
         List<Channel> out = new ArrayList<Channel>();
         JSONArray arr = data.optJSONArray("channels");

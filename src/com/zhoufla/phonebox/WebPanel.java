@@ -385,6 +385,10 @@ public final class WebPanel {
             sms.put("channels", new JSONArray(cfg.channelNames()));
             o.put("sms", sms);
 
+            if (cfg.monitorEnabled()) {
+                o.put("monitor", Monitor.snapshot(ctx));
+            }
+
             JSONObject config = new JSONObject();
             JSONObject web = new JSONObject();
             web.put("port", cfg.webPort());

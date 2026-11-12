@@ -23,7 +23,14 @@
 - 网页面板：短信列表、重发、发短信、发件记录、通道编辑、规则编辑/测试、日志、设置
 - 前台服务投递 worker，短信到达立即唤醒
 
-系统监控（M3）和 Cloudflare DDNS（M4）在后续阶段接入。
+**M3 系统监控**：
+
+- 电量、电池温度/电压、充电状态与健康度
+- `/sys/class/thermal` 芯片温度（取最高值，兼容毫摄氏度）
+- 双卡信号：运营商、网络制式、等级、dBm
+- CPU 核数、占用率、负载、当前频率；内存、数据分区、网络类型与流量
+
+Cloudflare DDNS（M4）和保活加固（M5）在后续阶段接入。
 
 ## 目标平台
 
@@ -70,7 +77,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.2.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.3.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -131,6 +138,7 @@ phone-box/
 │   ├── BootReceiver.java
 │   ├── SmsReceiver.java
 │   ├── SmsInbox.java
+│   ├── Monitor.java
 │   ├── SmsSender.java
 │   ├── SendReceiver.java
 │   ├── Db.java

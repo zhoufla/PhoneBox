@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
@@ -62,9 +62,48 @@ Content-Type: application/json
     "lastError": "",
     "channels": ["dingtalk", "telegram"]
   },
+  "monitor": {
+    "ts": 1760000000000,
+    "uptimeSec": 266400,
+    "battery": {
+      "level": 87, "status": "放电中", "plugged": "", "health": "良好",
+      "tempC": 31.2, "voltageMv": 4050
+    },
+    "signal": {
+      "operator": "中国移动", "type": "LTE", "level": 4, "dbm": -72,
+      "sims": [
+        {"slot": 1, "carrier": "中国移动", "display": "SIM 1",
+         "type": "LTE", "level": 4, "dbm": -72}
+      ]
+    },
+    "thermal": {
+      "maxC": 42.0,
+      "zones": [{"name": "cpu-0-0", "tempC": 42.0}, {"name": "gpu", "tempC": 38.0}]
+    },
+    "cpu": {
+      "cores": 8, "usagePct": 23, "load1": 0.52, "load5": 0.61, "load15": 0.58,
+      "freqMhz": [1780, 2840], "maxMhz": 2840
+    },
+    "memory": {"totalMb": 5700, "availableMb": 2100, "usedPct": 63},
+    "storage": {"dataTotalMb": 113600, "dataFreeMb": 82000, "dataUsedPct": 27},
+    "network": {
+      "connected": true, "type": "wifi", "iface": "wlan0",
+      "ipv4": ["192.168.1.23"], "ipv6": ["240e:..."],
+      "rxBytes": 3221225472, "txBytes": 536870912
+    }
+  },
   "config": {"web": {"port": 8080, "user": "admin"}}
 }
 ```
+
+`monitor` 在配置 `monitor.enabled=false` 时不会出现。字段可能缺失（权限不足或 ROM 不提供），
+前端按“—”处理。`cpu.usagePct` 的第一次调用会补一次 120ms 采样。
+
+信号和温度都是尽力而为：
+
+- `signal` 依赖 `READ_PHONE_STATE`，双卡时 `sims` 逐卡读取，读不到就只留默认卡
+- `thermal` 读 `/sys/class/thermal/thermal_zone*/temp`，兼容毫摄氏度与摄氏度
+- `storage` 只统计应用数据分区；`network.rxBytes/txBytes` 是开机以来的累计流量
 
 ### `GET /api/config`
 

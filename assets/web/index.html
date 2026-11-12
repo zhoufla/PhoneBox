@@ -81,6 +81,7 @@
   }
   .list li:first-child { border-top: 0; padding-top: 0; }
   .list .iface { color: var(--muted); white-space: nowrap; }
+  .list .mval { text-align: right; word-break: break-word; }
 
   .msg { padding: 12px 0; border-top: 1px solid var(--line); }
   .msg:first-child { border-top: 0; padding-top: 0; }
@@ -192,6 +193,10 @@
       <article class="card">
         <div class="label">设备</div>
         <div id="device" class="value">—</div>
+      </article>
+      <article class="card wide">
+        <div class="label">系统状态</div>
+        <ul id="monitor" class="list"><li class="muted">正在读取…</li></ul>
       </article>
       <article class="card wide">
         <div class="label">访问地址</div>
@@ -327,6 +332,9 @@
         </div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
           <input id="cfgSmsEnabled" type="checkbox" style="width:auto;margin:0;"> 启用短信接收与转发
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+          <input id="cfgMonitorEnabled" type="checkbox" style="width:auto;margin:0;"> 在概览显示系统监控
         </label>
         <button class="primary" type="submit">保存设置</button>
       </form>
@@ -474,6 +482,7 @@
       }
 
       renderAddresses(d.addresses || []);
+      renderMonitor(d.monitor);
       $("channelSummary").textContent = (sms.channels && sms.channels.length)
         ? sms.channels.join(" · ") : "未配置通道";
       $("version").textContent = d.version || "—";
@@ -495,6 +504,147 @@
       li.appendChild(el("span", "mono", a.url));
       li.appendChild(el("span", "iface", a.iface));
       list.appendChild(li);
+    });
+  }
+
+  // ---------- 系统监控 ----------
+
+  function numText(v, digits) {
+    if (typeof v !== "number" || !isFinite(v)) return "—";
+    return digits ? v.toFixed(digits) : String(Math.round(v));
+  }
+
+  function mbText(mb) {
+    if (typeof mb !== "number" || !isFinite(mb)) return "—";
+    return mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB";
+  }
+
+  function bytesText(n) {
+    if (typeof n !== "number" || n < 0) return "—";
+    var units = ["B", "KB", "MB", "GB", "TB"];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + " " + units[i];
+  }
+
+  function signalText(sig) {
+    if (!sig) return "—";
+    var parts = [];
+    var sims = sig.sims || [];
+    if (sims.length) {
+      sims.forEach(function (s) {
+        var one = [];
+        one.push("SIM" + (s.slot || "?"));
+        if (s.carrier) one.push(s.carrier);
+        if (s.type) one.push(s.type);
+        if (typeof s.level === "number") one.push(s.level + "/4");
+        if (typeof s.dbm === "number") one.push(s.dbm + " dBm");
+        parts.push(one.join(" "));
+      });
+    } else {
+      if (sig.type) parts.push(sig.type);
+      if (typeof sig.level === "number") parts.push(sig.level + "/4");
+      if (typeof sig.dbm === "number") parts.push(sig.dbm + " dBm");
+      if (sig.operator) parts.push(sig.operator);
+    }
+    return parts.length ? parts.join(" · ") : "—";
+  }
+
+  function thermalText(t) {
+    if (!t) return "—";
+    var parts = [];
+    if (typeof t.maxC === "number") parts.push("最高 " + t.maxC.toFixed(1) + " °C");
+    var zones = (t.zones || []).slice(0, 3).map(function (z) {
+      return z.name + " " + numText(z.tempC, 1) + " °C";
+    });
+    if (zones.length) parts.push(zones.join(" / "));
+    return parts.length ? parts.join(" · ") : "—";
+  }
+
+  function cpuText(c) {
+    if (!c) return "—";
+    var parts = [];
+    if (c.cores) parts.push(c.cores + " 核");
+    if (typeof c.usagePct === "number") parts.push("占用 " + c.usagePct + "%");
+    if (typeof c.load1 === "number") parts.push("负载 " + c.load1.toFixed(2));
+    var f = c.freqMhz || [];
+    if (f.length) {
+      var lo = Math.min.apply(null, f), hi = Math.max.apply(null, f);
+      parts.push((lo / 1000).toFixed(2) + "–" + (hi / 1000).toFixed(2) + " GHz");
+    }
+    return parts.length ? parts.join(" · ") : "—";
+  }
+
+  function memText(m) {
+    if (!m || !m.totalMb) return "—";
+    var used = Math.max(0, m.totalMb - (m.availableMb || 0));
+    var text = (m.usedPct == null ? "" : m.usedPct + "% · ")
+      + mbText(used) + " / " + mbText(m.totalMb);
+    if (m.swapTotalMb) text += " · Swap " + mbText(m.swapTotalMb - (m.swapFreeMb || 0));
+    return text;
+  }
+
+  function storageText(s) {
+    if (!s || !s.dataTotalMb) return "—";
+    return "剩余 " + mbText(s.dataFreeMb) + " / " + mbText(s.dataTotalMb)
+      + (s.dataUsedPct == null ? "" : "（" + s.dataUsedPct + "%）");
+  }
+
+  function networkText(n) {
+    if (!n) return "—";
+    var names = {
+      wifi: "WiFi", cellular: "移动数据", ethernet: "以太网",
+      vpn: "VPN", bluetooth: "蓝牙", other: "其它", none: "未连接"
+    };
+    var parts = [names[n.type] || n.type || "未连接"];
+    if (n.iface) parts.push(n.iface);
+    if (typeof n.rxBytes === "number") parts.push("↓ " + bytesText(n.rxBytes));
+    if (typeof n.txBytes === "number") parts.push("↑ " + bytesText(n.txBytes));
+    return parts.join(" · ");
+  }
+
+  function addrText(n) {
+    if (!n) return "—";
+    var all = [];
+    (n.ipv4 || []).forEach(function (ip) { all.push(ip); });
+    (n.ipv6 || []).forEach(function (ip) { all.push(ip); });
+    return all.length ? all.join("  ") : "—";
+  }
+
+  function renderMonitor(m) {
+    var box = $("monitor");
+    box.textContent = "";
+    if (!m) {
+      box.appendChild(el("li", "muted", "系统监控已在设置中关闭"));
+      return;
+    }
+    var b = m.battery || {};
+    var batteryText = b.level == null ? "—" : b.level + "%";
+    if (b.status) batteryText += " · " + b.status;
+    if (b.plugged) batteryText += " · " + b.plugged;
+    if (b.health) batteryText += " · " + b.health;
+
+    var btParts = [];
+    if (typeof b.tempC === "number") btParts.push(b.tempC.toFixed(1) + " °C");
+    if (typeof b.voltageMv === "number") btParts.push((b.voltageMv / 1000).toFixed(2) + " V");
+
+    var rows = [
+      ["电量", batteryText],
+      ["电池温度", btParts.length ? btParts.join(" · ") : "—"],
+      ["芯片温度", thermalText(m.thermal)],
+      ["信号", signalText(m.signal)],
+      ["CPU", cpuText(m.cpu)],
+      ["内存", memText(m.memory)],
+      ["存储", storageText(m.storage)],
+      ["网络", networkText(m.network)],
+      ["地址", addrText(m.network)],
+      ["开机时长", fmtUptime(m.uptimeSec)]
+    ];
+    rows.forEach(function (r) {
+      var li = el("li");
+      li.appendChild(el("span", "muted", r[0]));
+      li.appendChild(el("span", "mval mono", r[1]));
+      box.appendChild(li);
     });
   }
 
@@ -718,6 +868,8 @@
     $("cfgDedup").value = sms.dedupWindowSec == null ? 90 : sms.dedupWindowSec;
     $("cfgSub").value = String(sms.defaultSubId == null ? -1 : sms.defaultSubId);
     $("cfgSmsEnabled").checked = sms.enabled !== false;
+    var monitor = c.monitor || {};
+    $("cfgMonitorEnabled").checked = monitor.enabled !== false;
   }
 
   function saveSettings(ev) {
@@ -736,6 +888,9 @@
           enabled: $("cfgSmsEnabled").checked,
           dedupWindowSec: Number($("cfgDedup").value),
           defaultSubId: Number($("cfgSub").value)
+        },
+        monitor: {
+          enabled: $("cfgMonitorEnabled").checked
         }
       }
     }).then(function (r) {

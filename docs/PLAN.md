@@ -234,6 +234,6 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - [x] M0 骨架（前台服务、HTTP 面板、状态页、权限入口）
 - [x] M1 短信主链路（接收、去重、入库、规则、Webhook/钉钉/Telegram、发送、退避重试）
 - [x] M2 面板（短信、发送、通道、规则、日志、设置；轮询刷新，未做 SSE）
-- [ ] M3 系统监控
+- [x] M3 系统监控（电量、电池/芯片温度、双卡信号、CPU、内存、存储、网络）
 - [ ] M4 Cloudflare DDNS
 - [ ] M5 保活加固与发布（Alarm/Job 兜底、72h 浸泡）
