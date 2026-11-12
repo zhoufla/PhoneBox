@@ -190,6 +190,7 @@ POST /api/ddns/now        立即更新 DDNS
 | M3 监控 | 电量、信号、温度、CPU/内存/存储/网络 | 数据与系统设置对得上；面板关闭后不持续采样 |
 | M4 DDNS | Cloudflare AAAA/A、多记录、变更检测、失败告警 | IPv6 变化后 2 分钟内更新；地址不变不调 API |
 | M5 保活/发布 | 开机、闹钟、Job、看门狗、MIUI 引导、72h 浸泡、CI | 息屏 72h 可用；重启自启；异常恢复；耗电 <3%/天 |
+| M6 在线升级 | GitHub 最新 Release、SHA-256 校验、PackageInstaller 用户确认 | 同签名 APK 可检查、下载并由系统安装器升级 |
 
 ## 10. 主要风险
 
@@ -237,3 +238,4 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - [x] M3 系统监控（电量、电池/芯片温度、双卡信号、CPU、内存、存储、网络）
 - [x] M4 Cloudflare DDNS（IPv6 优先、AAAA 更新、变更检测、失败通知）
 - [x] M5 保活加固（心跳闹钟、周期任务、线程自愈、面板重新布防；72h 浸泡待真机）
+- [x] M6 在线升级（GitHub Release、APK 校验、系统确认安装；正式 Release 需配置签名 Secrets）

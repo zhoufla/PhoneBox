@@ -1,0 +1,44 @@
+package com.zhoufla.phonebox;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageInstaller;
+import android.widget.Toast;
+
+/** 接收 PackageInstaller 结果，并在需要时打开系统确认页面。 */
+public final class UpdateInstallReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS,
+                PackageInstaller.STATUS_FAILURE);
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            Intent confirm = (Intent) intent.getParcelableExtra(Intent.EXTRA_INTENT);
+            if (confirm != null) {
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    context.startActivity(confirm);
+                } catch (Exception e) {
+                    Logs.add("打开系统安装确认页失败：" + e);
+                    Toast.makeText(context, "请返回 PhoneBox 再试一次安装", Toast.LENGTH_LONG).show();
+                }
+            }
+            return;
+        }
+        if (status == PackageInstaller.STATUS_SUCCESS) {
+            Logs.add("PhoneBox 更新安装成功");
+            Toast.makeText(context, "PhoneBox 更新安装完成", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+        String error = "更新安装失败" + (message == null || message.length() == 0
+                ? "" : "：" + message);
+        Logs.add(error);
+        Toast.makeText(context, error, Toast.LENGTH_LONG).show();
+    }
+}

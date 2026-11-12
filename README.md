@@ -54,6 +54,8 @@
 
 **首页滚动修复（0.6.1）**：定时刷新仅在内容变化时更新 TextView，避免重复设置可选中文本导致滚动位置跳动。
 
+**在线升级（0.7.0）**：App 首页可检查 GitHub 最新正式 Release，下载后校验 APK 文件大小、SHA-256、包名和版本码，再交由 Android 系统安装器；安装前仍需用户确认。首次安装更新时需在系统设置允许 PhoneBox 安装未知来源应用。GitHub 必须已有正式 Release，且发布 APK 使用同一签名密钥；没有 Release 时 App 会提示检查失败，不会自动下载未校验文件。
+
 ## 目标平台
 
 | 项 | 值 |
@@ -117,16 +119,16 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 
 ```sh
 # 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交
-git tag v0.6.1
-git push origin v0.6.1
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 Release 附件包含 APK、`SHA256SUMS` 和 `latest.json`。重新推同一标签前先删除旧标签和 Release：
 
 ```sh
-gh release delete v0.6.1 --yes
-git push origin :refs/tags/v0.6.1
-git tag -f v0.6.1 && git push origin v0.6.1
+gh release delete v0.7.0 --yes
+git push origin :refs/tags/v0.7.0
+git tag -f v0.7.0 && git push origin v0.7.0
 ```
 
 > Release 用的签名必须和手机已安装版本一致，否则只能卸载重装。CI 只从 Secrets 读取密钥，
@@ -135,7 +137,7 @@ git tag -f v0.6.1 && git push origin v0.6.1
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.6.1.apk
+adb install -r dist/com.zhoufla.phonebox-0.7.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -202,6 +204,8 @@ phone-box/
 │   ├── Monitor.java
 │   ├── Ddns.java
 │   ├── Watchdog.java
+│   ├── GithubUpdater.java
+│   ├── UpdateInstallReceiver.java
 │   ├── SmsSender.java
 │   ├── SendReceiver.java
 │   ├── Db.java

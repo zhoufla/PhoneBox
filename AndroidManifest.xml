@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zhoufla.phonebox"
-    android:versionCode="601"
-    android:versionName="0.6.1">
+    android:versionCode="700"
+    android:versionName="0.7.0">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="33" />
 
@@ -27,6 +27,7 @@
 
     <!-- 引导用户把应用加入电池优化白名单 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 12+ 精确闹钟；被拒时退化为 setAndAllowWhileIdle -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
@@ -76,6 +77,11 @@
             android:name=".WatchdogJob"
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- PackageInstaller 更新结果回调；安装仍由系统要求用户确认 -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
 
         <!-- 非默认短信 App：只监听 framework 的 SMS_RECEIVED -->
         <receiver

@@ -28,6 +28,7 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,11 +38,18 @@ import java.util.List;
  */
 public final class MainActivity extends Activity {
 
+    private static final int REQ_INSTALL_PERMISSION = 101;
+
     private AppConfig cfg;
     private TextView statusView;
     private TextView urlView;
     private TextView credView;
     private TextView permView;
+    private TextView updateView;
+    private Button updateCheckButton;
+    private Button updateInstallButton;
+    private GithubUpdater.Release availableUpdate;
+    private File pendingInstallFile;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refreshTask = new Runnable() {
@@ -89,6 +97,27 @@ public final class MainActivity extends Activity {
                 toast("部分权限未授予，对应功能会不可用");
             }
             refreshUi();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_INSTALL_PERMISSION || pendingInstallFile == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls()) {
+            File apk = pendingInstallFile;
+            pendingInstallFile = null;
+            submitInstall(apk);
+        } else {
+            updateView.setText("尚未允许 PhoneBox 安装未知来源应用；允许后可重新下载更新。");
+            //noinspection ResultOfMethodCallIgnored
+            pendingInstallFile.delete();
+            pendingInstallFile = null;
+            updateCheckButton.setEnabled(true);
+            updateInstallButton.setEnabled(availableUpdate != null
+                    && availableUpdate.updateAvailable());
         }
     }
 
@@ -173,6 +202,29 @@ public final class MainActivity extends Activity {
                 refreshUi();
             }
         });
+
+        LinearLayout updateCard = addCard(root);
+        updateCard.addView(label("应用更新"));
+        updateView = body("当前版本 " + installedVersion(), 13, Color.rgb(50, 50, 50));
+        updateCard.addView(updateView);
+        TextView updateHint = body(
+                "从 GitHub 最新正式 Release 检查更新。下载后会校验 SHA-256，并由 Android 安装器确认；不会静默安装。",
+                12, Color.rgb(120, 120, 120));
+        updateHint.setPadding(0, dp(6), 0, 0);
+        updateCard.addView(updateHint);
+        updateCheckButton = addButton(updateCard, "检查更新", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkForUpdate();
+            }
+        });
+        updateInstallButton = addButton(updateCard, "下载并安装", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                downloadUpdate();
+            }
+        });
+        updateInstallButton.setEnabled(false);
 
         LinearLayout permCard = addCard(root);
         permCard.addView(label("保活与权限"));
@@ -410,6 +462,175 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
 
+    private String installedVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "未知";
+        }
+    }
+
+    private void checkForUpdate() {
+        updateCheckButton.setEnabled(false);
+        updateInstallButton.setEnabled(false);
+        updateView.setText("正在连接 GitHub 检查最新正式 Release…");
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final GithubUpdater.Release release = GithubUpdater.check(MainActivity.this);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            availableUpdate = release.updateAvailable() ? release : null;
+                            if (release.updateAvailable()) {
+                                StringBuilder text = new StringBuilder();
+                                text.append("发现新版本 ").append(release.version)
+                                        .append("（当前 ").append(installedVersion()).append("）");
+                                if (release.notes.length() > 0) {
+                                    text.append("\n\n").append(release.notes);
+                                }
+                                updateView.setText(text.toString());
+                                updateInstallButton.setEnabled(true);
+                            } else {
+                                updateView.setText("当前已是最新正式版本：" + installedVersion());
+                            }
+                            updateCheckButton.setEnabled(true);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            availableUpdate = null;
+                            updateView.setText("检查更新失败：" + e.getMessage());
+                            updateCheckButton.setEnabled(true);
+                            updateInstallButton.setEnabled(false);
+                        }
+                    });
+                }
+            }
+        }, "phonebox-update-check");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void downloadUpdate() {
+        final GithubUpdater.Release release = availableUpdate;
+        if (release == null || !release.updateAvailable()) {
+            toast("请先检查更新");
+            return;
+        }
+        updateCheckButton.setEnabled(false);
+        updateInstallButton.setEnabled(false);
+        updateView.setText("准备下载 " + release.version + "…");
+        Thread t = new Thread(new Runnable() {
+            private int lastPercent = -1;
+
+            @Override
+            public void run() {
+                try {
+                    File apk = GithubUpdater.download(MainActivity.this, release,
+                            new GithubUpdater.Progress() {
+                                @Override
+                                public void onProgress(final long downloaded, final long total) {
+                                    if (total <= 0) {
+                                        return;
+                                    }
+                                    final int percent = (int) Math.min(100,
+                                            downloaded * 100L / total);
+                                    if (percent == lastPercent) {
+                                        return;
+                                    }
+                                    lastPercent = percent;
+                                    handler.post(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            updateView.setText("正在下载并校验：" + percent + "%");
+                                        }
+                                    });
+                                }
+                            });
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            beginInstall(apk);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateView.setText("下载更新失败：" + e.getMessage());
+                            updateCheckButton.setEnabled(true);
+                            updateInstallButton.setEnabled(availableUpdate != null
+                                    && availableUpdate.updateAvailable());
+                        }
+                    });
+                }
+            }
+        }, "phonebox-update-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void beginInstall(File apk) {
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            pendingInstallFile = apk;
+            updateView.setText("请在系统设置中允许 PhoneBox 安装未知来源应用，返回后将继续安装。");
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(intent, REQ_INSTALL_PERMISSION);
+            } catch (Exception e) {
+                pendingInstallFile = null;
+                //noinspection ResultOfMethodCallIgnored
+                apk.delete();
+                updateView.setText("无法打开未知来源安装设置：" + e.getMessage());
+                updateCheckButton.setEnabled(true);
+                updateInstallButton.setEnabled(true);
+            }
+            return;
+        }
+        submitInstall(apk);
+    }
+
+    private void submitInstall(final File apk) {
+        final GithubUpdater.Release release = availableUpdate;
+        if (release == null) {
+            //noinspection ResultOfMethodCallIgnored
+            apk.delete();
+            return;
+        }
+        updateView.setText("已校验 APK，正在交给 Android 安装器…");
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    GithubUpdater.install(MainActivity.this, apk, release.code);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateView.setText("系统安装器已打开，请确认安装。更新后应用会自动重启。");
+                            updateCheckButton.setEnabled(true);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateView.setText("启动系统安装器失败：" + e.getMessage());
+                            updateCheckButton.setEnabled(true);
+                            updateInstallButton.setEnabled(true);
+                        }
+                    });
+                }
+            }
+        }, "phonebox-update-install");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private LinearLayout addCard(LinearLayout parent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -444,7 +665,7 @@ public final class MainActivity extends Activity {
         return view;
     }
 
-    private void addButton(LinearLayout parent, String text, View.OnClickListener listener) {
+    private Button addButton(LinearLayout parent, String text, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(text);
         button.setAllCaps(false);
@@ -454,6 +675,7 @@ public final class MainActivity extends Activity {
         lp.topMargin = dp(8);
         parent.addView(button, lp);
         button.setOnClickListener(listener);
+        return button;
     }
 
     private int dp(int value) {
