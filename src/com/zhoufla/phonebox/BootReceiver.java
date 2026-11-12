@@ -17,6 +17,7 @@ public final class BootReceiver extends BroadcastReceiver {
                 || "android.intent.action.QUICKBOOT_POWERON".equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             Logs.add("收到 " + action + "，启动服务");
+            Watchdog.scheduleAll(context);
             RelayService.start(context);
         }
     }

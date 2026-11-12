@@ -22,6 +22,7 @@ import java.util.List;
 public final class RelayService extends Service {
 
     public static final String ACTION_STOP = "com.zhoufla.phonebox.STOP";
+    public static final String ACTION_WAKE = "com.zhoufla.phonebox.WAKE";
 
     private static final String CHANNEL_ID = "phonebox_service";
     private static final String CHANNEL_ALERT = "phonebox_alert";
@@ -38,6 +39,7 @@ public final class RelayService extends Service {
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
     private Thread worker;
+    private volatile int workerGen = 0;
     private Db db;
 
     private final Runnable tick = new Runnable() {
@@ -46,6 +48,10 @@ public final class RelayService extends Service {
             ServiceState.lastHeartbeatElapsed = SystemClock.elapsedRealtime();
             if (!WebPanel.isRunning()) {
                 WebPanel.start(RelayService.this);
+            }
+            if (!ServiceState.workerAlive) {
+                Logs.add("投递线程已退出，重新拉起");
+                startWorker();
             }
             updateNotification();
             if (handler != null) {
@@ -83,21 +89,36 @@ public final class RelayService extends Service {
         handler.post(tick);
 
         running = true;
+        startWorker();
+        Watchdog.scheduleAll(this);
+
+        Logs.add("服务启动");
+    }
+
+    private void startWorker() {
+        running = true;
+        final int gen = ++workerGen;
+        ServiceState.workerAlive = true;
         worker = new Thread(new Runnable() {
             @Override
             public void run() {
-                loop();
+                try {
+                    loop(gen);
+                } finally {
+                    if (gen == workerGen) {
+                        ServiceState.workerAlive = false;
+                    }
+                }
             }
         }, "phonebox-worker");
         worker.setDaemon(true);
         worker.start();
-
-        Logs.add("服务启动");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            Watchdog.cancelAll(this);
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -109,6 +130,10 @@ public final class RelayService extends Service {
         if (!WebPanel.isRunning()) {
             WebPanel.start(this);
         }
+        if (!ServiceState.workerAlive) {
+            startWorker();
+        }
+        Watchdog.scheduleAll(this);
         wakeWorker();
         updateNotification();
         return START_STICKY;
@@ -135,7 +160,19 @@ public final class RelayService extends Service {
     }
 
     public static void start(Context context) {
+        start(context, null);
+    }
+
+    /** 由闹钟/Job 唤醒：带一个动作便于日志区分，重复启动无副作用。 */
+    public static void startWake(Context context) {
+        start(context, ACTION_WAKE);
+    }
+
+    private static void start(Context context, String action) {
         Intent intent = new Intent(context, RelayService.class);
+        if (action != null) {
+            intent.setAction(action);
+        }
         try {
             if (Build.VERSION.SDK_INT >= 26) {
                 context.startForegroundService(intent);
@@ -148,7 +185,20 @@ public final class RelayService extends Service {
     }
 
     public static void stop(Context context) {
-        context.stopService(new Intent(context, RelayService.class));
+        if (!ServiceState.running) {
+            Watchdog.cancelAll(context);
+            context.stopService(new Intent(context, RelayService.class));
+            return;
+        }
+        // 先让服务自己收尾（撤掉闹钟/Job 再停止），避免停了又被兜底拉起来
+        Intent intent = new Intent(context, RelayService.class);
+        intent.setAction(ACTION_STOP);
+        try {
+            context.startService(intent);
+        } catch (Exception e) {
+            Watchdog.cancelAll(context);
+            context.stopService(new Intent(context, RelayService.class));
+        }
     }
 
     /** 有新短信/配置变更/面板操作时立刻踢一轮投递。 */
@@ -160,10 +210,10 @@ public final class RelayService extends Service {
 
     // ---------- 投递 ----------
 
-    private void loop() {
+    private void loop(int gen) {
         int idle = 0;
         long lastPrune = 0;
-        while (running) {
+        while (running && gen == workerGen) {
             int sent = 0;
             try {
                 AppConfig cfg = AppConfig.get(this);

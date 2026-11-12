@@ -11,6 +11,7 @@ public final class ServiceState {
     public static volatile long lastHeartbeatElapsed = 0;
     public static volatile int panelPort = 0;
     public static volatile String panelError = "";
+    public static volatile boolean workerAlive = false;
 
     // DDNS 最近一次结果（进程内）
     public static volatile boolean ddnsRan = false;

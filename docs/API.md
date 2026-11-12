@@ -42,11 +42,17 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
   "panel": {"running": true, "port": 8080, "error": ""},
+  "watchdog": {
+    "alarmAt": 1760000900000, "alarmInSec": 845, "alarmExact": true,
+    "alarmCount": 12, "lastAlarmAt": 1760000000000,
+    "lastJobAt": 1760000000000, "jobCount": 11, "jobScheduled": true,
+    "batteryOptimized": false, "workerAlive": true, "serviceRunning": true
+  },
   "device": {"model": "MI 9", "android": "11", "sdk": 30},
   "addresses": [
     {"iface": "wlan0", "ip": "192.168.1.23", "url": "http://192.168.1.23:8080"},
@@ -219,6 +225,33 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 {"drop":false,"rule":"验证码优先","matched":["验证码优先"],
  "targets":["dingtalk"],"code":"123456"}
 ```
+
+## 保活
+
+### `POST /api/watchdog/rearm`
+
+撤销并重新布防心跳闹钟与周期任务，同时确保服务在运行：
+
+```json
+{
+  "alarmAt": 1760000900000,
+  "alarmInSec": 900,
+  "alarmExact": true,
+  "alarmCount": 3,
+  "lastAlarmAt": 1760000000000,
+  "lastJobAt": 1760000000000,
+  "jobCount": 2,
+  "jobScheduled": true,
+  "batteryOptimized": false,
+  "workerAlive": true,
+  "serviceRunning": true
+}
+```
+
+- `alarmExact=false` 表示系统拒绝精确闹钟，已退化为 `setAndAllowWhileIdle`。
+- `batteryOptimized=true` 表示尚未加入电池优化白名单，MIUI 上更容易被杀。
+- `workerAlive=false` 说明投递线程已退出，服务会在下一次心跳前自动重启。
+- 用户主动“停止服务”会撤销闹钟与周期任务，不会自行复活。
 
 ## DDNS
 

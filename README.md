@@ -37,7 +37,13 @@
 - 失败发系统通知并写入面板；支持手动“立即更新”
 - Token 只保存在应用私有配置，面板接口永远返回 `******`
 
-保活加固（M5）在后续阶段接入。
+**M5 保活加固**：
+
+- 15 分钟心跳闹钟，优先精确闹钟，被拒时退化为允许空闲唤醒
+- 15 分钟 `JobScheduler` 周期任务（persisted）在被系统回收后拉起服务
+- 面板与 App 均显示闹钟/任务状态，可一键“重新布防”
+- 投递线程和面板线程死亡后自动重启；主动停止服务会撤销兜底
+- 提供 `tools/soak-test.sh` 做 72 小时浸泡采样
 
 ## 目标平台
 
@@ -84,7 +90,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.4.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.5.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -147,6 +153,7 @@ phone-box/
 │   ├── SmsInbox.java
 │   ├── Monitor.java
 │   ├── Ddns.java
+│   ├── Watchdog.java
 │   ├── SmsSender.java
 │   ├── SendReceiver.java
 │   ├── Db.java

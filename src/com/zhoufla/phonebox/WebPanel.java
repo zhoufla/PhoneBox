@@ -198,6 +198,13 @@ public final class WebPanel {
                 }
                 return Http.Resp.json(200, o.toString());
             }
+            if (post && "/api/watchdog/rearm".equals(req.path)) {
+                Watchdog.cancelAll(ctx);
+                Watchdog.scheduleAll(ctx);
+                RelayService.start(ctx);
+                Logs.add("面板重新布防后台心跳与周期任务");
+                return Http.Resp.json(200, Watchdog.snapshot(ctx).toString());
+            }
             if (post && "/api/ddns/run".equals(req.path)) {
                 Ddns.Result r = Ddns.run(ctx, true);
                 ServiceState.setDdns(r);
@@ -395,6 +402,8 @@ public final class WebPanel {
             if (cfg.monitorEnabled()) {
                 o.put("monitor", Monitor.snapshot(ctx));
             }
+
+            o.put("watchdog", Watchdog.snapshot(ctx));
 
             JSONObject ddns = new JSONObject();
             ddns.put("enabled", cfg.ddnsEnabled());

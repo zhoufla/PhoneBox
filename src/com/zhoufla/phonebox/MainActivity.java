@@ -25,6 +25,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -55,6 +57,7 @@ public final class MainActivity extends Activity {
         cfg = AppConfig.get(this);
         buildUi();
         ensurePermissions();
+        Watchdog.scheduleAll(this);
         RelayService.start(this);
         handler.post(refreshTask);
     }
@@ -159,6 +162,16 @@ public final class MainActivity extends Activity {
                 refreshUi();
             }
         });
+        addButton(controlCard, "重新布防后台", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Watchdog.cancelAll(MainActivity.this);
+                Watchdog.scheduleAll(MainActivity.this);
+                RelayService.start(MainActivity.this);
+                toast("已重新布防心跳闹钟和周期任务");
+                refreshUi();
+            }
+        });
 
         LinearLayout permCard = addCard(root);
         permCard.addView(label("保活与权限"));
@@ -186,7 +199,7 @@ public final class MainActivity extends Activity {
 
         TextView note = body(
                 "短信接收 / 规则转发 / 网页发短信 / 系统监控 / Cloudflare DDNS 已接入。\n"
-                        + "保活加固将在后续版本继续完善。\n\n"
+                        + "心跳闹钟与周期任务会自动把服务拉回来；点“停止服务”会撤掉兜底。\n\n"
                         + "无 root 无法对抗 MIUI 强制停止。请打开自启动、省电策略选“无限制”、"
                         + "在最近任务里锁定本应用，并且不要点“强行停止”。",
                 12, Color.rgb(120, 120, 120));
@@ -255,6 +268,16 @@ public final class MainActivity extends Activity {
         }
         b.append("电池优化：")
                 .append(isIgnoringBatteryOptimizations() ? "已忽略" : "未忽略")
+                .append('\n');
+        JSONObject w = Watchdog.snapshot(this);
+        b.append("心跳闹钟：")
+                .append(w.optInt("alarmInSec", -1) >= 0
+                        ? "约 " + Math.round(w.optInt("alarmInSec", 0) / 60.0) + " 分钟后" : "未布防")
+                .append(w.optBoolean("alarmExact", false) ? "（精确）" : "（允许空闲）")
+                .append('\n');
+        b.append("周期任务：")
+                .append(w.optBoolean("jobScheduled", false) ? "已布防" : "未布防")
+                .append(" · 已执行 ").append(w.optInt("jobCount", 0)).append(" 次")
                 .append('\n');
         b.append("开机自启：需在 MIUI 自启动中手动开启");
         return b.toString();

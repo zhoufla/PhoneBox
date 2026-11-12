@@ -200,6 +200,13 @@
         <ul id="monitor" class="list"><li class="muted">正在读取…</li></ul>
       </article>
       <article class="card wide">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <div class="label">保活</div>
+          <button class="small" id="rearm" style="margin-top:0;">重新布防</button>
+        </div>
+        <ul id="watchdog" class="list"><li class="muted">正在读取…</li></ul>
+      </article>
+      <article class="card wide">
         <div class="label">访问地址</div>
         <ul id="addresses" class="list"><li class="muted">正在读取…</li></ul>
       </article>
@@ -525,6 +532,7 @@
 
       renderAddresses(d.addresses || []);
       renderMonitor(d.monitor);
+      renderWatchdog(d.watchdog);
       renderDdns(d.ddns);
       $("channelSummary").textContent = (sms.channels && sms.channels.length)
         ? sms.channels.join(" · ") : "未配置通道";
@@ -689,6 +697,48 @@
       li.appendChild(el("span", "mval mono", r[1]));
       box.appendChild(li);
     });
+  }
+
+  // ---------- 保活 ----------
+
+  function renderWatchdog(w) {
+    var box = $("watchdog");
+    box.textContent = "";
+    if (!w) {
+      box.appendChild(el("li", "muted", "正在读取…"));
+      return;
+    }
+    var alarm = w.alarmInSec >= 0
+      ? "约 " + Math.max(1, Math.round(w.alarmInSec / 60)) + " 分钟后"
+      : "未布防";
+    alarm += w.alarmExact ? " · 精确" : " · 允许空闲";
+    var rows = [
+      ["服务", w.serviceRunning ? "运行中" : "未运行"],
+      ["投递线程", w.workerAlive ? "正常" : "已退出，等待重启"],
+      ["心跳闹钟", alarm + " · 已触发 " + (w.alarmCount || 0) + " 次"],
+      ["周期任务", (w.jobScheduled ? "已布防" : "未布防")
+        + " · 已执行 " + (w.jobCount || 0) + " 次"],
+      ["最近唤醒", fmtClock(w.lastAlarmAt || w.lastJobAt)],
+      ["电池优化", w.batteryOptimized ? "未忽略，可能被系统限制" : "已忽略"]
+    ];
+    rows.forEach(function (r) {
+      var li = el("li");
+      li.appendChild(el("span", "muted", r[0]));
+      li.appendChild(el("span", "mval mono", r[1]));
+      box.appendChild(li);
+    });
+  }
+
+  function rearmWatchdog() {
+    var btn = $("rearm");
+    btn.disabled = true;
+    api("/api/watchdog/rearm", { method: "POST", body: {} })
+      .then(function (w) {
+        showOk("已布防：心跳闹钟 " + (w.alarmInSec >= 0 ? Math.round(w.alarmInSec / 60) + " 分钟后" : "未设置"));
+        renderWatchdog(w);
+      })
+      .catch(function (e) { showError(e.message); })
+      .then(function () { btn.disabled = false; });
   }
 
   // ---------- DDNS ----------
@@ -1085,6 +1135,7 @@
   $("settingsForm").addEventListener("submit", saveSettings);
   $("ddnsForm").addEventListener("submit", saveDdns);
   $("ddnsRun").addEventListener("click", runDdns);
+  $("rearm").addEventListener("click", rearmWatchdog);
 
   $("sendForm").addEventListener("submit", function (ev) {
     ev.preventDefault();
