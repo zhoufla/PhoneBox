@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
@@ -310,6 +310,15 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 ```
 
 `limit` 1–500。日志只保存在内存，重启清空；不记录短信正文和密钥。
+
+### `GET /api/logs/download`
+
+返回最近 500 行纯文本，带 `Content-Disposition: attachment; filename="phonebox-logs.txt"`，
+可直接用浏览器或 `curl -OJ` 保存：
+
+```sh
+curl -u admin:密码 -OJ http://192.168.1.23:8080/api/logs/download
+```
 
 ## 约定
 

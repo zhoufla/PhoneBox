@@ -82,6 +82,8 @@
   .list li:first-child { border-top: 0; padding-top: 0; }
   .list .iface { color: var(--muted); white-space: nowrap; }
   .list .mval { text-align: right; word-break: break-word; }
+  .list li.click { cursor: pointer; }
+  .list li.click:hover { background: rgba(88, 166, 255, .07); }
 
   .msg { padding: 12px 0; border-top: 1px solid var(--line); }
   .msg:first-child { border-top: 0; padding-top: 0; }
@@ -228,6 +230,10 @@
         </div>
       </div>
       <div class="muted small">按时间倒序，最多显示最近 20 条。补收只读系统收件箱，不会重复转发。</div>
+      <div class="row" style="margin-top:10px;align-items:end;">
+        <label>搜索号码、正文或验证码<input id="msgSearch" type="search" autocomplete="off" placeholder="留空显示全部"></label>
+        <div id="msgCount" class="muted small" style="padding-bottom:9px;">—</div>
+      </div>
       <div id="messages"></div>
     </div>
   </section>
@@ -346,9 +352,15 @@
   <!-- 日志 -->
   <section id="tab-logs" class="hidden">
     <div class="card wide" style="margin-top:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <h2>运行日志</h2>
-        <button class="small" id="logRefresh" style="margin-top:0;">刷新</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="small" style="display:flex;align-items:center;gap:6px;margin:0;">
+            <input id="logAuto" type="checkbox" style="width:auto;margin:0;"> 自动刷新
+          </label>
+          <button class="small" id="logDownload" style="margin-top:0;">下载</button>
+          <button class="small" id="logRefresh" style="margin-top:0;">刷新</button>
+        </div>
       </div>
       <div class="muted small">进程内环形日志，最多 500 行；重启后清空。</div>
       <pre id="logs" class="logs">正在读取…</pre>
@@ -437,7 +449,8 @@
   "use strict";
 
   var $ = function (id) { return document.getElementById(id); };
-  var state = { config: null, channels: [], editing: -1, status: null };
+  var state = { config: null, channels: [], editing: -1, status: null,
+    messages: [], msgQuery: "", logTimer: null };
 
   function showError(text) {
     var box = $("error");
@@ -499,6 +512,28 @@
     return n;
   }
 
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        if (document.execCommand("copy")) resolve();
+        else reject(new Error("浏览器不允许复制"));
+      } catch (e) {
+        reject(e);
+      }
+      document.body.removeChild(ta);
+    });
+  }
+
   // ---------- 状态 ----------
 
   function refreshStatus() {
@@ -551,9 +586,14 @@
       return;
     }
     addrs.forEach(function (a) {
-      var li = el("li");
+      var li = el("li", "click");
+      li.title = "点击复制地址";
       li.appendChild(el("span", "mono", a.url));
       li.appendChild(el("span", "iface", a.iface));
+      li.addEventListener("click", function () {
+        copyText(a.url).then(function () { showOk("已复制 " + a.url); })
+          .catch(function (e) { showError("复制失败：" + e.message); });
+      });
       list.appendChild(li);
     });
   }
@@ -836,40 +876,65 @@
 
   function loadMessages() {
     return api("/api/messages?limit=20").then(function (d) {
-      var box = $("messages");
-      box.textContent = "";
-      if (!d.items || !d.items.length) {
-        box.appendChild(el("p", "muted small", "还没有收到短信。"));
-        return;
-      }
-      d.items.forEach(function (m) {
-        var failed = (m.deliveries || []).some(function (x) { return x.status === 2; });
-        var card = el("div", "msg" + (failed ? " failed" : ""));
-        var head = el("div", "head");
-        head.appendChild(el("span", "peer", m.peer || "(未知号码)"));
-        head.appendChild(el("span", "time", m.iso));
-        if (m.code) head.appendChild(el("span", "tag", "验证码 " + m.code));
-        if (m.subId > 0) head.appendChild(el("span", "tag amber", "SIM " + m.subId));
-        if (m.rule) head.appendChild(el("span", "tag amber", "规则 " + m.rule));
-        card.appendChild(head);
-        card.appendChild(el("div", "body", m.body));
+      state.messages = d.items || [];
+      renderMessages();
+    });
+  }
 
-        var dl = el("div", "dl");
-        (m.deliveries || []).forEach(function (x) { dl.appendChild(deliveryTag(x)); });
-        card.appendChild(dl);
+  function renderMessages() {
+    var box = $("messages");
+    var q = state.msgQuery.trim().toLowerCase();
+    var items = state.messages.filter(function (m) {
+      if (!q) return true;
+      return ((m.peer || "") + " " + (m.body || "") + " " + (m.code || ""))
+        .toLowerCase().indexOf(q) >= 0;
+    });
+    box.textContent = "";
+    $("msgCount").textContent = state.messages.length
+      ? "显示 " + items.length + " / " + state.messages.length + " 条"
+      : "—";
+    if (!items.length) {
+      box.appendChild(el("p", "muted small",
+        state.messages.length ? "没有匹配的短信。" : "还没有收到短信。"));
+      return;
+    }
+    items.forEach(function (m) {
+      var failed = (m.deliveries || []).some(function (x) { return x.status === 2; });
+      var card = el("div", "msg" + (failed ? " failed" : ""));
+      var head = el("div", "head");
+      head.appendChild(el("span", "peer", m.peer || "(未知号码)"));
+      head.appendChild(el("span", "time", m.iso));
+      if (m.code) head.appendChild(el("span", "tag", "验证码 " + m.code));
+      if (m.subId > 0) head.appendChild(el("span", "tag amber", "SIM " + m.subId));
+      if (m.rule) head.appendChild(el("span", "tag amber", "规则 " + m.rule));
+      card.appendChild(head);
+      card.appendChild(el("div", "body", m.body));
 
-        var retry = el("button", "small", "重发全部通道");
-        retry.type = "button";
-        retry.addEventListener("click", function () {
-          retry.disabled = true;
-          api("/api/messages/retry", { method: "POST", body: { id: m.id } })
-            .then(function (r) { showOk("已重新排队：" + r.queued + " 条投递"); return loadMessages(); })
-            .catch(function (e) { showError(e.message); })
-            .then(function () { retry.disabled = false; });
-        });
-        card.appendChild(retry);
-        box.appendChild(card);
+      var dl = el("div", "dl");
+      (m.deliveries || []).forEach(function (x) { dl.appendChild(deliveryTag(x)); });
+      card.appendChild(dl);
+
+      var acts = el("div", "dl");
+      var copy = el("button", "small", "复制正文");
+      copy.type = "button";
+      copy.addEventListener("click", function () {
+        copyText(m.body || "").then(function () { showOk("已复制短信正文"); })
+          .catch(function (e) { showError("复制失败：" + e.message); });
       });
+      acts.appendChild(copy);
+
+      var retry = el("button", "small", "重发全部通道");
+      retry.type = "button";
+      retry.addEventListener("click", function () {
+        retry.disabled = true;
+        api("/api/messages/retry", { method: "POST", body: { id: m.id } })
+          .then(function (r) { showOk("已重新排队：" + r.queued + " 条投递"); return loadMessages(); })
+          .catch(function (e) { showError(e.message); })
+          .then(function () { retry.disabled = false; });
+      });
+      acts.appendChild(retry);
+      card.appendChild(acts);
+      box.appendChild(card);
     });
   }
 
@@ -1084,6 +1149,24 @@
     });
   }
 
+  function stopLogTimer() {
+    if (state.logTimer) {
+      clearInterval(state.logTimer);
+      state.logTimer = null;
+    }
+  }
+
+  function syncLogTimer() {
+    stopLogTimer();
+    if (!$("logAuto").checked || $("tab-logs").classList.contains("hidden")) return;
+    state.logTimer = setInterval(function () {
+      loadLogs().catch(function (e) {
+        stopLogTimer();
+        showError(e.message || String(e));
+      });
+    }, 5000);
+  }
+
   // ---------- 导航 ----------
 
   var tabLoaders = {
@@ -1098,13 +1181,19 @@
   };
 
   function showTab(name) {
+    if (!tabLoaders[name]) name = "overview";
     document.querySelectorAll(".tabs button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === name);
     });
     ["overview", "messages", "send", "channels", "rules", "ddns", "logs", "settings"].forEach(function (t) {
       $("tab-" + t).classList.toggle("hidden", t !== name);
     });
+    try {
+      if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    } catch (e) {
+    }
     showError("");
+    syncLogTimer();
     var loader = tabLoaders[name];
     if (loader) loader().catch(function (e) { showError(e.message || String(e)); });
   }
@@ -1116,6 +1205,10 @@
   });
 
   $("msgRefresh").addEventListener("click", function () { loadMessages().catch(function (e) { showError(e.message); }); });
+  $("msgSearch").addEventListener("input", function () {
+    state.msgQuery = this.value || "";
+    renderMessages();
+  });
   $("importInbox").addEventListener("click", function () {
     api("/api/inbox/import", { method: "POST", body: { limit: 50 } })
       .then(function (r) {
@@ -1127,6 +1220,13 @@
   });
   $("outRefresh").addEventListener("click", function () { loadOutbox().catch(function (e) { showError(e.message); }); });
   $("logRefresh").addEventListener("click", function () { loadLogs().catch(function (e) { showError(e.message); }); });
+  $("logDownload").addEventListener("click", function () {
+    window.location.href = "/api/logs/download";
+  });
+  $("logAuto").addEventListener("change", function () {
+    syncLogTimer();
+    if (this.checked) loadLogs().catch(function (e) { showError(e.message); });
+  });
   $("addChannel").addEventListener("click", function () { openChannel(-1); });
   $("chType").addEventListener("change", syncChannelFields);
   $("chCancel").addEventListener("click", function () { $("chDialog").close(); });
@@ -1180,7 +1280,9 @@
   });
 
   // 启动
+  var initial = (location.hash || "").replace(/^#/, "");
   refreshStatus();
+  showTab(tabLoaders[initial] ? initial : "overview");
   setInterval(function () {
     if (!$("tab-overview").classList.contains("hidden")) refreshStatus();
   }, 5000);

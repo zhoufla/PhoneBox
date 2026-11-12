@@ -45,6 +45,13 @@
 - 投递线程和面板线程死亡后自动重启；主动停止服务会撤销兜底
 - 提供 `tools/soak-test.sh` 做 72 小时浸泡采样
 
+**面板细节（0.6.0）**：
+
+- 标签页写入 URL hash，刷新/收藏后停留在原页面
+- 点击访问地址直接复制，短信支持按号码/正文/验证码过滤
+- 短信正文一键复制；日志支持自动刷新（5 秒）与下载 `phonebox-logs.txt`
+- 面板仍是零外链单文件，所有复制都带 HTTP 环境降级
+
 ## 目标平台
 
 | 项 | 值 |
@@ -87,10 +94,46 @@ dist/latest.json
 KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 ```
 
+## GitHub Actions 云编译与发布
+
+工作流：[`.github/workflows/build.yml`](.github/workflows/build.yml)
+
+- 推 `main` / PR / 手动触发：编译 APK，上传 Actions artifact，不创建 Release
+- 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致，编译并创建 GitHub Release
+- 未配置签名密钥时仍会构建，但使用临时签名，只上传 artifact，不发布 Release
+
+在仓库 `Settings → Secrets and variables → Actions` 添加：
+
+| Secret | 内容 |
+|---|---|
+| `KEYSTORE_BASE64` | `base64 -w0 keystore/phonebox.jks` 的输出 |
+| `KEYSTORE_PASS` | keystore 密码（本地默认 `phonebox`） |
+| `KEY_PASS` | key 密码，通常同上 |
+| `KEY_ALIAS` | key 别名（本地默认 `phonebox`） |
+
+生成并推送发布标签：
+
+```sh
+# 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交
+git tag v0.6.0
+git push origin v0.6.0
+```
+
+Release 附件包含 APK、`SHA256SUMS` 和 `latest.json`。重新推同一标签前先删除旧标签和 Release：
+
+```sh
+gh release delete v0.6.0 --yes
+git push origin :refs/tags/v0.6.0
+git tag -f v0.6.0 && git push origin v0.6.0
+```
+
+> Release 用的签名必须和手机已安装版本一致，否则只能卸载重装。CI 只从 Secrets 读取密钥，
+> 不要提交 `keystore/` 或把 base64 写进仓库。
+
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.5.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.6.0.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -140,6 +183,7 @@ curl -H "Authorization: Bearer <token>" http://192.168.x.x:8080/api/status
 
 ```text
 phone-box/
+├── .github/workflows/build.yml
 ├── AndroidManifest.xml
 ├── build.sh
 ├── assets/web/index.html
@@ -149,6 +193,8 @@ phone-box/
 │   ├── MainActivity.java
 │   ├── RelayService.java
 │   ├── BootReceiver.java
+│   ├── HeartbeatReceiver.java
+│   ├── WatchdogJob.java
 │   ├── SmsReceiver.java
 │   ├── SmsInbox.java
 │   ├── Monitor.java
@@ -176,6 +222,8 @@ phone-box/
 │   ├── MIUI-KEEPALIVE.md
 │   └── API.md
 └── tools/
+    ├── smoke-test.sh
+    └── soak-test.sh
 ```
 
 ## 文档

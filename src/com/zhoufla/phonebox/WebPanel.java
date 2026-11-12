@@ -158,6 +158,12 @@ public final class WebPanel {
                 o.put("lines", Logs.json(intQ(req, "limit", 100, 1, 500)));
                 return Http.Resp.json(200, o.toString());
             }
+            if (get && "/api/logs/download".equals(req.path)) {
+                Http.Resp r = Http.Resp.text(200, Logs.tail(500));
+                r.headers.put("Content-Disposition", "attachment; filename=\"phonebox-logs.txt\"");
+                r.headers.put("Cache-Control", "no-store");
+                return r;
+            }
             if (get && "/api/messages".equals(req.path)) {
                 JSONObject o = new JSONObject();
                 o.put("total", Db.get(ctx).events());
