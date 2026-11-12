@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -236,25 +237,32 @@ public final class MainActivity extends Activity {
         if (ServiceState.panelError != null && !ServiceState.panelError.isEmpty()) {
             status.append('\n').append(ServiceState.panelError);
         }
-        statusView.setText(status.toString());
+        setTextIfChanged(statusView, status.toString());
 
         List<NetInfo.Addr> addresses = NetInfo.addresses(port);
         if (addresses.isEmpty()) {
-            urlView.setText("未检测到可用地址（请连接 WiFi 或数据网络）");
+            setTextIfChanged(urlView, "未检测到可用地址（请连接 WiFi 或数据网络）");
         } else {
             StringBuilder urls = new StringBuilder("面板地址：\n");
             for (NetInfo.Addr a : addresses) {
                 urls.append(a.url).append("  [").append(a.iface).append("]\n");
             }
-            urlView.setText(urls.toString().trim());
+            setTextIfChanged(urlView, urls.toString().trim());
         }
 
-        credView.setText("账号 " + cfg.webUser()
+        setTextIfChanged(credView, "账号 " + cfg.webUser()
                 + "\n密码 " + cfg.webPass()
                 + "\nToken " + cfg.webToken()
                 + "\n\n本机打开 http://127.0.0.1:" + port);
 
-        permView.setText(permissionSummary());
+        setTextIfChanged(permView, permissionSummary());
+    }
+
+    /** 避免 2 秒轮询对未变化的可选中文本重复 setText，重置焦点/选择并带动 ScrollView 跳动。 */
+    private static void setTextIfChanged(TextView view, CharSequence text) {
+        if (view != null && !TextUtils.equals(view.getText(), text)) {
+            view.setText(text);
+        }
     }
 
     private String permissionSummary() {

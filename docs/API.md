@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
