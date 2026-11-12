@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#101827"
+        android:pathData="M18,0h72c9.941,0 18,8.059 18,18v72c0,9.941 -8.059,18 -18,18h-72c-9.941,0 -18,-8.059 -18,-18v-72c0,-9.941 8.059,-18 18,-18z" />
+
+    <!-- 手机机身与屏幕 -->
+    <path
+        android:fillColor="#38D8CF"
+        android:pathData="M37,12h29c8.837,0 16,7.163 16,16v52c0,8.837 -7.163,16 -16,16h-29c-8.837,0 -16,-7.163 -16,-16v-52c0,-8.837 7.163,-16 16,-16z" />
+    <path
+        android:fillColor="#15243A"
+        android:pathData="M38,20h27c5.523,0 10,4.477 10,10v48c0,5.523 -4.477,10 -10,10h-27c-5.523,0 -10,-4.477 -10,-10v-48c0,-5.523 4.477,-10 10,-10z" />
+    <path
+        android:fillColor="#9BF5E8"
+        android:pathData="M46,16h11c1.657,0 3,1.343 3,3s-1.343,3 -3,3h-11c-1.657,0 -3,-1.343 -3,-3s1.343,-3 3,-3zM48,81h7c1.657,0 3,1.343 3,3s-1.343,3 -3,3h-7c-1.657,0 -3,-1.343 -3,-3s1.343,-3 3,-3z" />
+
+    <!-- 短信气泡 -->
+    <path
+        android:fillColor="#36D39A"
+        android:pathData="M39,34h25c4.418,0 8,3.582 8,8v12c0,4.418 -3.582,8 -8,8h-8l-10,8v-8h-7c-4.418,0 -8,-3.582 -8,-8v-12c0,-4.418 3.582,-8 8,-8z" />
+    <path
+        android:fillColor="#10283A"
+        android:pathData="M41,45c0,-1.657 1.343,-3 3,-3s3,1.343 3,3 -1.343,3 -3,3 -3,-1.343 -3,-3zM50,45c0,-1.657 1.343,-3 3,-3s3,1.343 3,3 -1.343,3 -3,3 -3,-1.343 -3,-3zM59,45c0,-1.657 1.343,-3 3,-3s3,1.343 3,3 -1.343,3 -3,3 -3,-1.343 -3,-3z" />
+
+    <!-- 手机网络信号：提示网关在线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#72E9DF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M78,23c5,-4 11,-4 16,0M81,30c3,-2 7,-2 10,0" />
+    <path
+        android:fillColor="#72E9DF"
+        android:pathData="M84,35c0,-1.657 1.343,-3 3,-3s3,1.343 3,3 -1.343,3 -3,3 -3,-1.343 -3,-3z" />
+</vector>
