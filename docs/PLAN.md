@@ -240,6 +240,7 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - [x] M5 保活加固（心跳闹钟、周期任务、线程自愈、面板重新布防；72h 浸泡待真机）
 - [x] M6 在线升级（GitHub Release、APK 校验、系统确认安装；正式 Release 需配置签名 Secrets）
 - [x] M7 0.8.0 增量（测试事件、异常告警、PWA-lite）
+- [x] M8 0.8.1 增量（概览双卡号码、模板默认带接收号码）
 
 ### M7 范围说明（0.8.0）
 
@@ -247,3 +248,11 @@ adb shell dumpsys batterystats --charged com.zhoufla.phonebox
 - 告警只在独立线程采样，阈值为低电/满充/高温/断网/服务心跳/投递失败；去抖与冷却状态存 SharedPreferences，只读 Monitor/ServiceState/Db，绝不写 `dl` 表或触发重试，避免告警自激。默认只发本地通知，`alerts.channels` 非空时才外推。
 - PWA 只做 manifest/图标/视口适配；Service Worker 需要安全上下文（HTTPS 或 localhost），明文 HTTP 面板不做离线缓存。
 - 本次明确不做：鉴权失败限速、Keystore 加密、密码哈希、绑定地址可配、首页凭据折叠、SSE、通道熔断、配置导出、纯 JVM 单测、targetSdk 升级。
+
+### M8 范围说明（0.8.1）
+
+- 新增 `Sims.java` 统一读取双卡：手动填写优先于系统 API（国内 SIM 的 EF_MSISDN 通常为空），60 秒缓存，保存配置后清缓存。`Monitor.signal.sims` 与 `/api/status` 顶层 `sims` 同源；顶层字段不受 `monitor.enabled` 影响。
+- 不改数据库结构：`ev`/`dl` 表新增字段一律避免，接收卡号在投递时按 `subId` 现场解析后传给 `Sender`，文本模板用 `{sim}`/`{slot}`，Webhook JSON 增加 `sim`/`slot` 字段。
+- `sims.autoSimLine` 默认 `true`：模板没写 `{sim}` 时自动追加一行，保证旧配置升级后也带接收号码；显式写 `{sim}` 的模板保持原样。告警外推复用旧 `Sender.send` 重载，不附加接收号码。
+- 面板在线更新新增 `PanelUpdater`：复用 `GithubUpdater` 的三步链路，网络与安装调用全部放后台线程，HTTP 只暴露状态/检查/安装三个接口并轮询进度；`UpdateInstallReceiver` 回写最终状态。未授予 `REQUEST_INSTALL_PACKAGES` 时只提示、不尝试安装；系统确认后进程重启，面板短暂断开属正常。
+- 本次明确不做：SIM 卡变化告警、规则按 subId 路由、号码脱敏、HTTPS/PWA Service Worker、自动定时检查更新与自动安装。

@@ -22,14 +22,24 @@ public final class Sender {
     private Sender() {
     }
 
+    /** 兼容调用（告警外推）：不附加接收号码。 */
+    public static String send(Channel ch, Deliver d, String device) {
+        return send(ch, d, device, "", "", false);
+    }
+
     /**
      * 投递一条消息。成功返回 null，失败返回可读错误（会写进 dl.err）。
+     * sim/slot 是接收短信那张卡的信息：文本模板用 {sim}/{slot}，Webhook JSON 也会带 sim/slot。
      */
-    public static String send(Channel ch, Deliver d, String device) {
+    public static String send(Channel ch, Deliver d, String device,
+                              String sim, String slot, boolean autoSimLine) {
         try {
             SmsEvent e = d.toEvent();
+            e.sim = sim == null ? "" : sim;
+            e.slot = slot == null ? "" : slot;
             String key = d.template != null && d.template.length() > 0 ? d.template : ch.template;
-            String text = Tpl.render(key, e, ch, device, SmsEvent.iso(e.ts));
+            String text = Tpl.render(key, e, ch, device, SmsEvent.iso(e.ts),
+                    e.sim, e.slot, autoSimLine);
 
             if (ch.isTelegram()) {
                 return sendTelegram(ch, text);

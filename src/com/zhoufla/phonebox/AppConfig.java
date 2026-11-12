@@ -111,6 +111,25 @@ public final class AppConfig {
         return monitor == null || monitor.optBoolean("enabled", true);
     }
 
+    // ---------- 本机号码 / 转发模板 ----------
+
+    /** 面板手动填写的卡槽号码；国内 SIM 常读不到 EF_MSISDN，手动值优先。 */
+    public synchronized String simNumber(int slot) {
+        JSONObject sims = data.optJSONObject("sims");
+        return sims == null ? "" : Sims.clean(sims.optString("slot" + slot, ""));
+    }
+
+    /** 未引用 {sim} 的模板自动追加一行「接收号码」；旧配置默认开启。 */
+    public synchronized boolean autoSimLine() {
+        JSONObject sims = data.optJSONObject("sims");
+        return sims == null || sims.optBoolean("autoSimLine", true);
+    }
+
+    public synchronized JSONObject simsConfig() {
+        JSONObject sims = data.optJSONObject("sims");
+        return sims == null ? new JSONObject() : sims;
+    }
+
     // ---------- 异常告警 ----------
 
     /** 旧配置没有 alerts 段时默认开启（只发本地通知，不外推）。 */
@@ -401,6 +420,18 @@ public final class AppConfig {
                 }
             }
 
+            JSONObject sims = incoming.optJSONObject("sims");
+            if (sims != null) {
+                JSONObject cur = next.optJSONObject("sims");
+                if (cur == null) {
+                    cur = new JSONObject();
+                    next.put("sims", cur);
+                }
+                cur.put("slot1", simField(sims, "slot1"));
+                cur.put("slot2", simField(sims, "slot2"));
+                cur.put("autoSimLine", sims.optBoolean("autoSimLine", true));
+            }
+
             JSONObject monitor = incoming.optJSONObject("monitor");
             if (monitor != null) {
                 JSONObject cur = next.optJSONObject("monitor");
@@ -474,6 +505,19 @@ public final class AppConfig {
         } catch (JSONException e) {
             throw new IllegalArgumentException("配置 JSON 无效：" + e.getMessage());
         }
+    }
+
+    /** 手动号码：允许 +、空格、连字符、括号，但内容必须能归一化成电话号码。 */
+    private static String simField(JSONObject sims, String key) {
+        String raw = sims.optString(key, "").trim();
+        if (raw.length() == 0) {
+            return "";
+        }
+        String v = Sims.clean(raw);
+        if (v.length() == 0) {
+            throw new IllegalArgumentException(key + " 只能是号码，可带 +、空格或连字符");
+        }
+        return v;
     }
 
     private static int clampInt(int v, int min, int max) {
@@ -666,6 +710,12 @@ public final class AppConfig {
             ddns.put("family", "v6");
             ddns.put("records", new JSONArray());
             root.put("ddns", ddns);
+
+            JSONObject sims = new JSONObject();
+            sims.put("slot1", "");
+            sims.put("slot2", "");
+            sims.put("autoSimLine", true);
+            root.put("sims", sims);
 
             JSONObject monitor = new JSONObject();
             monitor.put("enabled", true);

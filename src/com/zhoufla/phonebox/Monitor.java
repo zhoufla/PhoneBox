@@ -16,8 +16,6 @@ import android.os.StatFs;
 import android.os.SystemClock;
 import android.telephony.CellSignalStrength;
 import android.telephony.SignalStrength;
-import android.telephony.SubscriptionInfo;
-import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 
 import org.json.JSONArray;
@@ -180,23 +178,22 @@ public final class Monitor {
 
         JSONArray sims = new JSONArray();
         try {
-            SubscriptionManager sm = (SubscriptionManager)
-                    ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-            List<SubscriptionInfo> list = sm == null ? null : sm.getActiveSubscriptionInfoList();
-            if (list != null) {
-                for (SubscriptionInfo info : list) {
-                    JSONObject s = new JSONObject();
+            // 与 /api/status 的 sims 同源：卡槽、运营商、号码（自动 + 手动），再补逐卡信号。
+            JSONArray list = Sims.list(ctx);
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject src = list.optJSONObject(i);
+                if (src == null) {
+                    continue;
+                }
+                JSONObject s = new JSONObject(src.toString());
+                int subId = s.optInt("subId", -1);
+                if (subId >= 0) {
                     try {
-                        s.put("slot", info.getSimSlotIndex() + 1);
-                        CharSequence carrier = info.getCarrierName();
-                        s.put("carrier", carrier == null ? "" : carrier.toString().trim());
-                        CharSequence display = info.getDisplayName();
-                        s.put("display", display == null ? "" : display.toString().trim());
-                        fillSignal(tm.createForSubscriptionId(info.getSubscriptionId()), s);
+                        fillSignal(tm.createForSubscriptionId(subId), s);
                     } catch (Exception ignored) {
                     }
-                    sims.put(s);
                 }
+                sims.put(s);
             }
         } catch (Exception ignored) {
             // 无 READ_PHONE_STATE 授权或 ROM 限制：只保留默认卡的信号

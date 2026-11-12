@@ -22,8 +22,11 @@ public final class UpdateInstallReceiver extends BroadcastReceiver {
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 try {
                     context.startActivity(confirm);
+                    PanelUpdater.onInstallResult(status, "");
                 } catch (Exception e) {
                     Logs.add("打开系统安装确认页失败：" + e);
+                    PanelUpdater.onInstallResult(PackageInstaller.STATUS_FAILURE,
+                            "打开系统安装确认页失败，请打开 PhoneBox App 首页重试");
                     Toast.makeText(context, "请返回 PhoneBox 再试一次安装", Toast.LENGTH_LONG).show();
                 }
             }
@@ -31,6 +34,7 @@ public final class UpdateInstallReceiver extends BroadcastReceiver {
         }
         if (status == PackageInstaller.STATUS_SUCCESS) {
             Logs.add("PhoneBox 更新安装成功");
+            PanelUpdater.onInstallResult(status, "");
             Toast.makeText(context, "PhoneBox 更新安装完成", Toast.LENGTH_LONG).show();
             return;
         }
@@ -39,6 +43,7 @@ public final class UpdateInstallReceiver extends BroadcastReceiver {
         String error = "更新安装失败" + (message == null || message.length() == 0
                 ? "" : "：" + message);
         Logs.add(error);
+        PanelUpdater.onInstallResult(status, error);
         Toast.makeText(context, error, Toast.LENGTH_LONG).show();
     }
 }

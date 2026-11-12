@@ -30,6 +30,7 @@
 - 电量、电池温度/电压、充电状态与健康度
 - `/sys/class/thermal` 芯片温度（取最高值，兼容毫摄氏度）
 - 双卡信号：运营商、网络制式、等级、dBm
+- 双卡本机号码：系统读取或面板手动填写，概览与转发模板共用（0.8.1）
 - CPU 核数、占用率、负载、当前频率；内存、数据分区、网络类型与流量
 
 **M4 Cloudflare DDNS**：
@@ -56,13 +57,19 @@
 
 **首页滚动修复（0.6.1）**：定时刷新仅在内容变化时更新 TextView，避免重复设置可选中文本导致滚动位置跳动。
 
-**在线升级（0.7.0）**：App 首页可检查 GitHub 最新正式 Release，下载后校验 APK 文件大小、SHA-256、包名和版本码，再交由 Android 系统安装器；安装前仍需用户确认。首次安装更新时需在系统设置允许 PhoneBox 安装未知来源应用。GitHub 必须已有正式 Release，且发布 APK 使用同一签名密钥；没有 Release 时 App 会提示检查失败，不会自动下载未校验文件。
+**在线升级（0.7.0 起）**：App 首页可检查 GitHub 最新正式 Release，下载后校验 APK 文件大小、SHA-256、包名和版本码，再交由 Android 系统安装器；安装前仍需用户确认。首次安装更新时需在系统设置允许 PhoneBox 安装未知来源应用。GitHub 必须已有正式 Release，且发布 APK 使用同一签名密钥；没有 Release 时 App 会提示检查失败，不会自动下载未校验文件。
 
 **0.8.0 增量**：
 
 - **发送测试事件**：概览页填入号码/正文/SIM，构造一条假短信走完整的「入库 → 去重 → 规则 → 通道」链路，不消耗真短信。正文自动附 `[测试 #HHmmss]`，避免被 90 秒去重窗口合并；接口 `POST /api/test/event`。
 - **异常告警**：按配置间隔在独立线程检查低电量、长期满充、高温、断网、服务/心跳异常、投递积压与连续失败；持续判定 + 冷却去抖，复用 `phonebox_alert` 通知渠道。默认**只发本地通知**，在设置页填写通道名才会外推；告警不写短信库、不进重试队列。接口 `POST /api/alerts/test` 可手动触发一条测试告警。
 - **PWA-lite**：`manifest.webmanifest` + 192/512 PNG 图标 + 窄屏与安全区适配，手机浏览器「添加到主屏幕」后可用独立图标与独立窗口打开。Service Worker 只在 HTTPS/localhost 可用，面板走明文 HTTP，因此**不做离线缓存，也不安装成 WebAPK**；需要完整 PWA 请自行加 HTTPS 反代。
+
+**0.8.1 增量**：
+
+- **概览显示双卡号码**：新增 `sims` 信息模块，逐卡展示卡槽、运营商、本机号码与来源（系统读取 / 手动填写）。国内 SIM 常不向系统提供号码，可在「设置 → 本机号码」按卡填写；`/api/status` 顶层 `sims` 不受「系统监控」开关影响。
+- **转发模板默认带接收号码**：新增 `{sim}`（接收短信那张卡的号码，读不到回退「卡N」）与 `{slot}`（卡槽号）。默认模板已包含，自定义模板没写 `{sim}` 时自动追加一行「接收号码」（设置页可关闭）；Webhook 事件 JSON 同步带 `sim` / `slot`，告警外推不受影响。
+- **面板在线更新**：设置页新增「在线更新」卡片，可直接在网页面板检查 GitHub 正式 Release、下载校验并交给系统安装器确认，带进度与状态轮询；与 App 首页共用同一套校验规则。接口 `GET /api/update/status`、`POST /api/update/check`、`POST /api/update/install`（均需鉴权，POST 需 `X-Requested-With: phonebox`）。安装确认后服务会短暂重启。
 
 ## 目标平台
 
@@ -112,7 +119,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 
 - 推 `main` / PR：编译 APK 并上传 Actions artifact，不创建 Release
 - 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致后自动创建 Release
-- Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.8.0`
+- Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.8.1`
 - `release` 模式和 `v*` 标签都要求签名 Secrets；缺少密钥或版本不匹配会明确失败，不会发布临时签名 APK
 - 每次成功的非 PR 构建后自动清理，只保留最近 3 次 Actions 运行（连同其 artifact）和最近 3 个 Release；旧 Release 对应的 Git 标签会保留
 
@@ -125,20 +132,20 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 | `KEY_PASS` | key 密码，通常同上 |
 | `KEY_ALIAS` | key 别名（本地默认 `phonebox`） |
 
-**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`。发布标签可留空，工作流会自动使用 Manifest 的 `versionName` 加 `v` 前缀（当前为 `v0.8.0`）；也可手动填写匹配的标签。运行后工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
+**推荐通过 Actions 页面发布**：打开 `Actions → build → Run workflow`，选择 `main` 分支，`action` 选 `release`。发布标签可留空，工作流会自动使用 Manifest 的 `versionName` 加 `v` 前缀（当前为 `v0.8.1`）；也可手动填写匹配的标签。运行后工作流会编译并创建 Release/tag。也可以先本地打 tag 再推送，触发自动 Release：
 
 ```sh
 # 先把 AndroidManifest.xml 的 versionCode / versionName 改好并提交
-git tag v0.8.0
-git push origin v0.8.0
+git tag v0.8.1
+git push origin v0.8.1
 ```
 
 Release 附件包含 APK、`SHA256SUMS` 和 `latest.json`。重新推同一标签前先删除旧标签和 Release：
 
 ```sh
-gh release delete v0.8.0 --yes
-git push origin :refs/tags/v0.8.0
-git tag -f v0.8.0 && git push origin v0.8.0
+gh release delete v0.8.1 --yes
+git push origin :refs/tags/v0.8.1
+git tag -f v0.8.1 && git push origin v0.8.1
 ```
 
 > Release 用的签名必须和手机已安装版本一致，否则只能卸载重装。CI 只从 Secrets 读取密钥，
@@ -147,7 +154,7 @@ git tag -f v0.8.0 && git push origin v0.8.0
 ## 安装
 
 ```sh
-adb install -r dist/com.zhoufla.phonebox-0.8.0.apk
+adb install -r dist/com.zhoufla.phonebox-0.8.1.apk
 adb shell am start -n com.zhoufla.phonebox/.MainActivity
 ```
 
@@ -188,7 +195,9 @@ curl -H "Authorization: Bearer <token>" http://192.168.x.x:8080/api/status
 | 钉钉 | URL、Secret | 自定义机器人，支持加签和 text/markdown |
 | Telegram | Bot Token、chatId | 直接调用 `sendMessage` |
 
-模板占位符：`{peer}` `{body}` `{code}` `{device}` `{tag}` `{time}` `{sub}`。留空使用默认模板，
+模板占位符：`{peer}` `{body}` `{code}` `{device}` `{tag}` `{time}` `{sub}` `{sim}` `{slot}`。
+`{sim}` 是接收短信那张卡的号码、`{slot}` 是卡槽号。留空使用默认模板（已含接收号码）；
+自定义模板没写 `{sim}` 时会自动追加一行「接收号码」，可在「设置 → 本机号码」关闭。
 有验证码时自动把验证码放到第一行。
 
 规则在面板「规则」里用 JSON 编辑，保存前会校验正则和通道名。详见 [`docs/API.md`](docs/API.md)。

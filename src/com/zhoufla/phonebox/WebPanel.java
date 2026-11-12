@@ -165,6 +165,9 @@ public final class WebPanel {
             if (get && "/api/status".equals(req.path)) {
                 return Http.Resp.json(200, status(ctx, cfg));
             }
+            if (get && "/api/update/status".equals(req.path)) {
+                return Http.Resp.json(200, PanelUpdater.status().toString());
+            }
             if (get && "/api/config".equals(req.path)) {
                 return Http.Resp.json(200, cfg.publicJson().toString());
             }
@@ -241,6 +244,12 @@ public final class WebPanel {
             }
             if (post && "/api/alerts/test".equals(req.path)) {
                 return testAlert(ctx, req);
+            }
+            if (post && "/api/update/check".equals(req.path)) {
+                return Http.Resp.json(200, PanelUpdater.startCheck(ctx).toString());
+            }
+            if (post && "/api/update/install".equals(req.path)) {
+                return Http.Resp.json(200, PanelUpdater.startInstall(ctx).toString());
             }
             if (post && "/api/config".equals(req.path)) {
                 return saveConfig(ctx, cfg, req);
@@ -361,6 +370,7 @@ public final class WebPanel {
         JSONObject body = new JSONObject(req.body);
         int oldPort = cfg.webPort();
         cfg.update(body);
+        Sims.clearCache();
         boolean portChanged = cfg.webPort() != oldPort;
         RelayService.start(ctx);
         Logs.add("配置已保存" + (portChanged ? "，面板端口变更，正在重启" : ""));
@@ -477,6 +487,8 @@ public final class WebPanel {
 
             o.put("watchdog", Watchdog.snapshot(ctx));
             o.put("alerts", Alert.snapshot(ctx));
+            // 概览始终显示双卡号码，不依赖 monitor.enabled 开关。
+            o.put("sims", Sims.list(ctx));
 
             JSONObject ddns = new JSONObject();
             ddns.put("enabled", cfg.ddnsEnabled());

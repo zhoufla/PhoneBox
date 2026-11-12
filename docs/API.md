@@ -42,7 +42,7 @@ Content-Type: application/json
 ```json
 {
   "app": "phonebox",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "running": true,
   "uptimeSec": 123,
   "heartbeatAgeSec": 3,
@@ -78,7 +78,8 @@ Content-Type: application/json
     "signal": {
       "operator": "中国移动", "type": "LTE", "level": 4, "dbm": -72,
       "sims": [
-        {"slot": 1, "carrier": "中国移动", "display": "SIM 1",
+        {"slot": 1, "subId": 1, "carrier": "中国移动", "display": "SIM 1",
+         "number": "13800138000", "source": "manual", "label": "13800138000",
          "type": "LTE", "level": 4, "dbm": -72}
       ]
     },
@@ -108,6 +109,12 @@ Content-Type: application/json
     "enabled": true, "notify": true, "intervalMin": 5, "cooldownMin": 30,
     "channels": [], "active": [], "lastCheckAt": 1760000000000, "lastError": ""
   },
+  "sims": [
+    {"slot": 1, "subId": 1, "carrier": "中国移动", "display": "SIM 1",
+     "number": "13800138000", "source": "manual", "label": "13800138000"},
+    {"slot": 2, "subId": 2, "carrier": "中国移动", "display": "SIM 2",
+     "number": "", "source": "", "label": "卡2"}
+  ],
   "config": {"web": {"port": 8080, "user": "admin"}}
 }
 ```
@@ -118,6 +125,10 @@ Content-Type: application/json
 `alerts.active` 是当前未恢复的告警，元素形如
 `{"key":"battery_high","title":"长期满充","message":"...","at":1760000000000}`；
 `channels` 为告警外推通道名列表，空数组表示只发本地通知。
+
+`sims` 是 `/api/status` 顶层的双卡信息（`monitor.enabled=false` 时依然存在），与
+`monitor.signal.sims` 同源，后者额外补了逐卡信号。`source` 为 `manual`（面板手动填写）、
+`sim`（系统读取）或空（读不到号码）；`label` 是给模板用的显示值，号码读不到时回退「卡N」。
 
 信号和温度都是尽力而为：
 
@@ -131,7 +142,10 @@ Content-Type: application/json
 
 ### `POST /api/config`
 
-只覆盖传入的顶层字段，支持：`device`、`web`、`sms`、`channels`、`rules`、`rulesDefault`、`ddns`、`monitor`、`alerts`、`retention`。
+只覆盖传入的顶层字段，支持：`device`、`web`、`sms`、`channels`、`rules`、`rulesDefault`、`ddns`、`monitor`、`alerts`、`sims`、`retention`。
+
+`sims` 段字段：`slot1`、`slot2`（手动填写的本机号码，只接受数字，可带 `+`、空格、连字符）、
+`autoSimLine`（默认 `true`）。手动号码优先于系统读取值，留空表示清除。
 
 `alerts` 段字段：`enabled`、`notify`、`intervalMin`(1-60)、`cooldownMin`(1-1440)、
 `channels`(通道名数组，留空不外推)、`thresholds`（`lowPct`、`highPct`、`tempC`、`pending`、
@@ -149,6 +163,20 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 修改端口返回 `{"ok":true,"restart":true}`，面板会在 0.5 秒后自动重启。
 
 规则校验失败（坏正则、重名、引用不存在的通道）返回 400，旧配置不变。
+
+### 双卡号码与转发模板
+
+概览显示 `sims` 数组里的两张卡：卡槽、运营商、号码及来源。国内 SIM 通常不写 EF_MSISDN，
+系统 API（`SubscriptionManager.getPhoneNumber` / `SubscriptionInfo.getNumber` /
+`TelephonyManager.getLine1Number`）大概率返回空，建议在设置页手动填写卡 1 / 卡 2 号码。
+
+转发模板新增 `{sim}`（接收短信那张卡的号码，读不到时回退「卡N」）与 `{slot}`（卡槽号）。
+默认模板已含 `接收号码：{sim}`；自定义模板没写 `{sim}` 且 `sims.autoSimLine=true` 时，
+自动在末尾追加一行。占位符全集：
+`{peer}` `{body}` `{code}` `{device}` `{tag}` `{time}` `{sub}` `{sim}` `{slot}`。
+
+Webhook 事件 JSON 同步新增 `sim` / `slot` 字段（有值时才出现）；钉钉、Telegram 走文本模板渲染。
+告警外推不附加接收号码。
 
 ## 短信
 
@@ -268,6 +296,38 @@ curl -u admin:PASS -H 'X-Requested-With: phonebox' \
 ```
 
 告警不写短信库、不进重试队列；只有 `alerts.channels` 非空时才外推，推送失败只写日志。
+
+## 面板在线更新
+
+与 App 首页共用 `GithubUpdater`：检查 GitHub 最新正式 Release → 校验 `latest.json` 与 APK 附件 →
+下载到应用私有缓存并校验大小、SHA-256、包名与版本码 → 用 `PackageInstaller` 提交安装，
+系统安装器仍要求用户确认。不会静默安装。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/update/status` | 返回当前任务状态，纯内存读取，不联网，可轮询 |
+| `POST /api/update/check` | 异步发起检查，立即返回 `{ok,started}` |
+| `POST /api/update/install` | 异步下载 + 提交安装，立即返回 `{ok,started}` |
+
+三个接口都需要鉴权；两个 POST 还要求 `X-Requested-With: phonebox`。重复发起、无可用更新、
+未允许「安装未知应用」时返回 `{"ok":false,"started":false,"warning":"..."}`（HTTP 200）。
+
+```json
+{
+  "state": "available", "message": "发现新版本 0.8.1（当前版本码 800）",
+  "busy": false, "downloaded": 0, "total": 0, "percent": 0, "at": 1760000000000,
+  "release": {"version": "0.8.1", "tag": "v0.8.1",
+    "apk": "com.zhoufla.phonebox-0.8.1.apk", "code": 801, "installedCode": 800,
+    "size": 103241, "sha256": "...", "notes": "...", "updateAvailable": true}
+}
+```
+
+`state`：`idle` / `checking` / `available` / `up_to_date` / `downloading` / `installing` /
+`confirm`（等待用户在系统弹窗确认）/ `installed` / `error` / `need_permission`。
+`busy=true` 或 `state=confirm` 时前端每 1.5 秒轮询一次。安装成功后进程重启，面板短暂断开属正常现象。
+
+未授予 `REQUEST_INSTALL_PACKAGES` 时不会尝试安装，状态置为 `need_permission`，
+需到系统设置或 App 首页授权一次。安装结果由 `UpdateInstallReceiver` 回写状态并写入运行日志。
 
 ## 保活
 

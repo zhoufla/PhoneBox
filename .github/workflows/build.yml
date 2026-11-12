@@ -17,7 +17,7 @@ on:
         default: build
         required: true
       release_tag:
-        description: 可选；留空时自动使用 Manifest 版本，例如 v0.8.0
+        description: 可选；留空时自动使用 Manifest 版本，例如 v0.8.1
         type: string
         required: false
 

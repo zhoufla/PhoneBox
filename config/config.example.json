@@ -13,6 +13,11 @@
     "dedupWindowSec": 90,
     "defaultSubId": -1
   },
+  "sims": {
+    "slot1": "",
+    "slot2": "",
+    "autoSimLine": true
+  },
   "rulesDefault": "all",
   "channels": [
     {
@@ -20,7 +25,7 @@
       "type": "webhook",
       "url": "https://example.com/sms",
       "token": "可选 X-Token",
-      "template": "{peer}\n{body}\n设备：{device}",
+      "template": "{peer}\n{body}\n设备：{device}\n接收号码：{sim}",
       "tag": "",
       "maxTries": 10,
       "enabled": false
@@ -32,7 +37,7 @@
       "secret": "SECxxx",
       "format": "text",
       "title": "",
-      "template": "{peer}\n{body}\n设备：{device}",
+      "template": "{peer}\n{body}\n设备：{device}\n接收号码：{sim}",
       "maxTries": 10,
       "enabled": false
     },
@@ -41,7 +46,7 @@
       "type": "telegram",
       "token": "123456:ABC-DEF",
       "chatId": "123456789",
-      "template": "{peer}\n{body}\n设备：{device}",
+      "template": "{peer}\n{body}\n设备：{device}\n接收号码：{sim}",
       "maxTries": 10,
       "enabled": false
     }

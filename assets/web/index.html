@@ -219,6 +219,13 @@
         <ul id="watchdog" class="list"><li class="muted">正在读取…</li></ul>
       </article>
       <article class="card wide">
+        <div class="label">本机号码 · SIM 卡</div>
+        <ul id="simCards" class="list"><li class="muted">正在读取…</li></ul>
+        <div class="muted small" style="margin-top:8px;">
+          系统读不到号码时可在「设置 → 本机号码」手动填写；转发短信会默认带上接收号码。
+        </div>
+      </article>
+      <article class="card wide">
         <div class="label">访问地址</div>
         <ul id="addresses" class="list"><li class="muted">正在读取…</li></ul>
       </article>
@@ -435,6 +442,42 @@
       </div>
     </div>
     <div class="card wide" style="margin-top:12px;">
+      <h2>在线更新</h2>
+      <div class="muted small">
+        检查 GitHub 正式 Release，下载后校验大小、SHA-256、包名与版本码，再交给系统安装器确认。
+        安装期间服务会短暂中断，面板可能断开，请稍后刷新。
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div><div class="label">当前版本</div><div id="updCurrent" class="value mono">—</div></div>
+        <div><div class="label">状态</div><div id="updState" class="value">—</div></div>
+      </div>
+      <div id="updMessage" class="muted small" style="margin-top:10px;">尚未检查更新</div>
+      <div id="updProgress" class="muted small" style="margin-top:6px;"></div>
+      <pre id="updNotes" class="logs hidden" style="max-height:140px;"></pre>
+      <div style="margin-top:12px;">
+        <button type="button" class="primary" id="updCheck">检查更新</button>
+        <button type="button" id="updInstall" style="margin-left:8px;" disabled>下载并安装</button>
+      </div>
+    </div>
+    <div class="card wide" style="margin-top:12px;">
+      <h2>本机号码与转发模板</h2>
+      <div class="muted small">国内 SIM 卡通常不向系统提供本机号码。手动填写后，概览和转发出去的短信都会显示对应卡槽的号码；留空则沿用系统读到的号码。</div>
+      <form id="simsForm">
+        <div class="row">
+          <label>卡 1 号码<input id="cfgSim1" autocomplete="off" placeholder="13800138000"></label>
+          <label>卡 2 号码<input id="cfgSim2" autocomplete="off" placeholder="13900139000"></label>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+          <input id="cfgAutoSimLine" type="checkbox" style="width:auto;margin:0;"> 转发模板自动附加接收号码
+        </label>
+        <div class="muted small" style="margin-top:10px;">
+          模板占位符：{peer} {body} {code} {device} {tag} {time} {sub} {sim} {slot}。
+          模板里没写 {sim} 时自动追加一行「接收号码」，写了则由你决定位置；Webhook JSON 也会带 sim / slot 字段。
+        </div>
+        <button class="primary" type="submit">保存本机号码</button>
+      </form>
+    </div>
+    <div class="card wide" style="margin-top:12px;">
       <h2>异常告警</h2>
       <div class="muted small">默认只发本地通知。外推通道留空表示不外推；告警不写入短信记录，也不参与重试。</div>
       <form id="alertsForm">
@@ -483,7 +526,8 @@
     <label class="ch-token">Token / Bot Token<input id="chToken" autocomplete="off" placeholder="留空或 ****** 表示不改"></label>
     <label class="ch-secret">钉钉加签 Secret<input id="chSecret" autocomplete="off" placeholder="SEC...，可留空"></label>
     <label class="ch-chat">Telegram chatId<input id="chChat" autocomplete="off" placeholder="123456789 或 -100..."></label>
-    <label>转发模板<textarea id="chTemplate" placeholder="{peer}&#10;{body}&#10;设备：{device}"></textarea></label>
+    <label>转发模板<textarea id="chTemplate" placeholder="{peer}&#10;{body}&#10;设备：{device}&#10;接收号码：{sim}"></textarea></label>
+    <div class="muted small">{sim} 是接收短信的卡号、{slot} 是卡槽；留空使用默认模板。模板不含 {sim} 时会自动追加一行接收号码。</div>
     <div class="row ch-ding">
       <label>钉钉格式<select id="chFormat">
         <option value="text">text</option>
@@ -630,10 +674,34 @@
       $("channelSummary").textContent = (sms.channels && sms.channels.length)
         ? sms.channels.join(" · ") : "未配置通道";
       renderAlerts(d.alerts);
+      renderSims(d.sims);
       $("version").textContent = d.version || "—";
+      $("updCurrent").textContent = d.version || "—";
     }).catch(function (e) {
       setConn(false, "连接失败");
       showError(e.message || String(e));
+    });
+  }
+
+  function renderSims(sims) {
+    var box = $("simCards");
+    box.textContent = "";
+    var list = Array.isArray(sims) ? sims : [];
+    if (!list.length) {
+      box.appendChild(el("li", "muted", "未检测到 SIM 卡，可在设置里手动填写本机号码"));
+      return;
+    }
+    list.forEach(function (s) {
+      var li = el("li");
+      li.appendChild(el("span", "muted", "卡" + (s.slot || "?")));
+      var parts = [];
+      if (s.carrier) parts.push(s.carrier);
+      parts.push(s.number || "未识别号码");
+      if (s.source === "manual") parts.push("手动填写");
+      else if (s.source === "sim") parts.push("系统读取");
+      else parts.push("请在设置里填写");
+      li.appendChild(el("span", "mval mono", parts.join(" · ")));
+      box.appendChild(li);
     });
   }
 
@@ -1187,6 +1255,10 @@
     $("cfgSmsEnabled").checked = sms.enabled !== false;
     var monitor = c.monitor || {};
     $("cfgMonitorEnabled").checked = monitor.enabled !== false;
+    var sims = c.sims || {};
+    $("cfgSim1").value = sims.slot1 || "";
+    $("cfgSim2").value = sims.slot2 || "";
+    $("cfgAutoSimLine").checked = sims.autoSimLine !== false;
     var alerts = c.alerts || {};
     var th = alerts.thresholds || {};
     $("cfgAlertEnabled").checked = alerts.enabled !== false;
@@ -1258,6 +1330,59 @@
     }).catch(function (e) { showError(e.message); });
   }
 
+  function saveSims(ev) {
+    ev.preventDefault();
+    api("/api/config", {
+      method: "POST",
+      body: {
+        sims: {
+          slot1: $("cfgSim1").value.trim(),
+          slot2: $("cfgSim2").value.trim(),
+          autoSimLine: $("cfgAutoSimLine").checked
+        }
+      }
+    }).then(function () {
+      showOk("本机号码已保存");
+      return loadConfig().then(function () { return refreshStatus(); });
+    }).catch(function (e) { showError(e.message); });
+  }
+
+  // ---------- 在线更新 ----------
+
+  var updateTimer = null;
+
+  function refreshUpdate() {
+    return api("/api/update/status").then(renderUpdate);
+  }
+
+  function renderUpdate(u) {
+    if (!u) return;
+    $("updState").textContent = u.state || "idle";
+    $("updMessage").textContent = u.message || "—";
+    $("updProgress").textContent = u.state === "downloading"
+      ? ("已下载 " + bytesText(u.downloaded || 0) + " / " + bytesText(u.total || 0)
+         + "（" + (u.percent || 0) + "%）")
+      : "";
+    var r = u.release || null;
+    var submitted = u.state === "confirm" || u.state === "installed";
+    $("updCheck").disabled = !!u.busy;
+    $("updInstall").disabled = !(r && r.updateAvailable && !u.busy && !submitted);
+    var notes = r && r.notes ? r.notes : "";
+    var box = $("updNotes");
+    box.textContent = notes;
+    box.classList.toggle("hidden", !notes);
+    if (u.busy || u.state === "confirm") {
+      if (!updateTimer) {
+        updateTimer = setInterval(function () {
+          refreshUpdate().catch(function () {});
+        }, 1500);
+      }
+    } else if (updateTimer) {
+      clearInterval(updateTimer);
+      updateTimer = null;
+    }
+  }
+
   // ---------- 日志 ----------
 
   function loadLogs() {
@@ -1295,7 +1420,9 @@
     rules: loadConfig,
     ddns: function () { return loadConfig().then(function () { return refreshStatus(); }); },
     logs: loadLogs,
-    settings: loadConfig
+    settings: function () {
+      return loadConfig().then(function () { return refreshUpdate(); });
+    }
   };
 
   function showTab(name) {
@@ -1351,6 +1478,21 @@
   $("saveRules").addEventListener("click", saveRules);
   $("runTest").addEventListener("click", testRules);
   $("settingsForm").addEventListener("submit", saveSettings);
+  $("updCheck").addEventListener("click", function () {
+    api("/api/update/check", { method: "POST", body: {} }).then(function (r) {
+      if (r.warning) showError(r.warning);
+      return refreshUpdate();
+    }).catch(function (e) { showError(e.message); });
+  });
+  $("updInstall").addEventListener("click", function () {
+    if (!confirm("下载并校验后交给系统安装器，确认安装时服务会短暂中断。继续？")) return;
+    api("/api/update/install", { method: "POST", body: {} }).then(function (r) {
+      if (r.warning) showError(r.warning);
+      else showOk("已开始下载更新，请在系统弹窗点「安装」");
+      return refreshUpdate();
+    }).catch(function (e) { showError(e.message); });
+  });
+  $("simsForm").addEventListener("submit", saveSims);
   $("alertsForm").addEventListener("submit", saveAlerts);
   $("ddnsForm").addEventListener("submit", saveDdns);
   $("ddnsRun").addEventListener("click", runDdns);
@@ -1436,6 +1578,7 @@
   // 启动
   var initial = (location.hash || "").replace(/^#/, "");
   refreshStatus();
+  refreshUpdate().catch(function () {});
   showTab(tabLoaders[initial] ? initial : "overview");
   setInterval(function () {
     if (!$("tab-overview").classList.contains("hidden")) refreshStatus();

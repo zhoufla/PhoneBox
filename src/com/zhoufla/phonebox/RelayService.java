@@ -283,7 +283,9 @@ public final class RelayService extends Service {
             return 0;
         }
 
-        String err = Sender.send(ch, d, cfg.deviceName());
+        String sim = Sims.labelFor(this, d.subId);
+        String slot = Sims.slotFor(this, d.subId);
+        String err = Sender.send(ch, d, cfg.deviceName(), sim, slot, cfg.autoSimLine());
         if (err == null) {
             db.markOk(d.dlId);
             Logs.add("送达 " + ch.name + " ← " + d.peer);

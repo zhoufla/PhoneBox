@@ -57,6 +57,14 @@ echo
 echo "== index"
 curl -fsS -u "$AUTH" "$BASE/" | head -5
 
+echo "== 双卡号码（status.sims）"
+curl -fsS -u "$AUTH" "$BASE/api/status" | python3 -c \
+    'import sys,json; d=json.load(sys.stdin); print("顶层 sims 字段", "sims" in d, "卡数", len(d.get("sims", [])))'
+
+echo "== 面板在线更新状态（只读取，不触发下载/安装）"
+curl -fsS -u "$AUTH" "$BASE/api/update/status"
+echo
+
 echo "== manifest（无需认证）"
 curl -fsS "$BASE/manifest.webmanifest" | head -5
 

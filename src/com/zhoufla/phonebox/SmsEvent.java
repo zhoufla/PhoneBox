@@ -18,6 +18,9 @@ public final class SmsEvent {
     public String body = "";
     public String code = "";
     public int subId = -1;
+    /** Webhook payload 的接收卡信息，纯转发参数，不参与去重 hash。 */
+    public String sim = "";
+    public String slot = "";
 
     /** 去重键：时间戳 + 号码 + 正文；同一广播重复投递时完全不同判重由 Db 的时间窗口兜底。 */
     public String hash() {
@@ -35,6 +38,12 @@ public final class SmsEvent {
             o.put("body", body == null ? "" : body);
             o.put("code", code == null ? "" : code);
             o.put("subId", subId);
+            if (sim != null && sim.length() > 0) {
+                o.put("sim", sim);
+            }
+            if (slot != null && slot.length() > 0) {
+                o.put("slot", slot);
+            }
             o.put("ts", ts);
             o.put("iso", iso(ts));
         } catch (Exception ignored) {

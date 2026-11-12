@@ -4,28 +4,48 @@ package com.zhoufla.phonebox;
  * 转发模板。
  *
  * 占位符：{peer} 发件人、{body} 正文、{code} 验证码、{device} 设备名、
- * {tag} 通道标签、{time} 收信时间、{sub} SIM 卡槽。
+ * {tag} 通道标签、{time} 收信时间、{sub} 订阅 ID、
+ * {sim} 接收短信的 SIM 卡号码（读不到时回退「卡N」）、{slot} 卡槽号。
  */
 public final class Tpl {
 
-    public static final String DEFAULT_TEMPLATE = "{peer}\n{body}\n设备：{device}";
-    public static final String DEFAULT_CODE_TEMPLATE = "【{code}】{peer}\n{body}\n设备：{device}";
+    public static final String DEFAULT_TEMPLATE =
+            "{peer}\n{body}\n设备：{device}\n接收号码：{sim}";
+    public static final String DEFAULT_CODE_TEMPLATE =
+            "【{code}】{peer}\n{body}\n设备：{device}\n接收号码：{sim}";
+    public static final String AUTO_SIM_LINE = "\n接收号码：{sim}";
 
     private Tpl() {
     }
 
+    /** 兼容旧调用：不附加接收号码。 */
     public static String render(String tpl, SmsEvent e, Channel ch, String device, String time) {
+        return render(tpl, e, ch, device, time, "", "", false);
+    }
+
+    /**
+     * autoSimLine=true 且模板没写 {sim} 时，自动在末尾追加一行「接收号码」。
+     * 这样旧配置里的自定义模板升级后也会带上接收卡号，显式写了 {sim} 的模板不受影响。
+     */
+    public static String render(String tpl, SmsEvent e, Channel ch, String device, String time,
+                                String sim, String slot, boolean autoSimLine) {
         String t = (tpl == null || tpl.trim().length() == 0)
                 ? (e.code != null && e.code.length() > 0 ? DEFAULT_CODE_TEMPLATE : DEFAULT_TEMPLATE)
                 : tpl;
-        String sim = e.subId <= 0 ? "" : String.valueOf(e.subId);
+        String simText = nz(sim);
+        if (autoSimLine && simText.length() > 0 && !t.contains("{sim}")) {
+            t += AUTO_SIM_LINE;
+        }
+        String sub = e.subId <= 0 ? "" : String.valueOf(e.subId);
         t = t.replace("{code}", nz(e.code))
                 .replace("{peer}", nz(e.peer))
                 .replace("{body}", nz(e.body))
                 .replace("{device}", nz(device))
                 .replace("{tag}", ch == null ? "" : nz(ch.nzTag()))
                 .replace("{time}", nz(time))
-                .replace("{sub}", sim);
+                .replace("{sub}", sub)
+                .replace("{sim}", simText.length() > 0 ? simText : "—")
+                .replace("{slot}", nz(slot));
         return tidy(t);
     }
 
