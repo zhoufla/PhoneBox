@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -165,3 +166,47 @@ jobs:
               echo "签名：临时密钥（未配置 KEYSTORE_BASE64）"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    name: 清理旧 CI 与 Release（保留最近 3 个）
+    needs: apk
+    if: needs.apk.result == 'success' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: 删除较旧的 Actions 运行与关联 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_IDS=$(gh api --paginate --jq '.workflow_runs[].id' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?per_page=100")
+          KEPT=1
+          for RUN_ID in $RUN_IDS; do
+            if [ "$RUN_ID" = "$GITHUB_RUN_ID" ]; then
+              continue
+            fi
+            if [ "$KEPT" -lt 3 ]; then
+              KEPT=$((KEPT + 1))
+              continue
+            fi
+            echo "删除旧 Actions run: $RUN_ID"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+          done
+
+      - name: 只保留最近 3 个 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_IDS=$(gh api --paginate --jq '.[].id' \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+          KEPT=0
+          for RELEASE_ID in $RELEASE_IDS; do
+            if [ "$KEPT" -lt 3 ]; then
+              KEPT=$((KEPT + 1))
+              continue
+            fi
+            echo "删除旧 GitHub Release: $RELEASE_ID"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+          done

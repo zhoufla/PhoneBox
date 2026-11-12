@@ -106,6 +106,7 @@ KEYSTORE=/path/to/phonebox.jks KEYSTORE_PASS=... KEY_ALIAS=... sh build.sh
 - 推 `v*` 标签：校验标签与 `AndroidManifest.xml` 的 `versionName` 一致后自动创建 Release
 - Actions → `build` → `Run workflow`：可选择 `build` 或 `release`；发布时填写标签，如 `v0.7.0`
 - `release` 模式和 `v*` 标签都要求签名 Secrets；缺少密钥或版本不匹配会明确失败，不会发布临时签名 APK
+- 每次成功的非 PR 构建后自动清理，只保留最近 3 次 Actions 运行（连同其 artifact）和最近 3 个 Release；旧 Release 对应的 Git 标签会保留
 
 在仓库 `Settings → Secrets and variables → Actions` 添加：
 
