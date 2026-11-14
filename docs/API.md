@@ -2,20 +2,70 @@
 
 面板和内嵌 API 由 `RelayService` 托管，默认端口 `8080`。
 
-认证方式：
+认证方式（三种任选其一）：
 
-- HTTP Basic：`admin` / App 首页显示的随机密码
-- Bearer Token：`Authorization: Bearer <token>`
-- `/api/ping`、`/manifest.webmanifest`、`/icon-192.png`、`/icon-512.png`、`/favicon.ico` 无需认证
+- **网页表单会话**：浏览器打开面板地址会跳转到独立登录页 `/login`，输入账号密码后服务端下发 `phonebox_sid` Cookie，后续请求自动携带。这是面板默认方式。
+- **HTTP Basic**：`admin` / App 首页显示的随机密码，适合 `curl -u admin:密码`。
+- **Bearer Token**：`Authorization: Bearer <token>`，适合脚本。
 
-所有写操作（POST）必须带：
+服务端不再返回 `WWW-Authenticate`，因此浏览器不会弹出原生认证框；未登录访问 `/` 会 302 到 `/login`，未登录调用 API 返回纯 401 JSON，前端据此跳转登录页。脚本主动发送 Basic / Bearer 头的行为不变。
+
+页面（`/`、`/index.html`、`/login`）**只认会话 Cookie**，Basic / Bearer 仅用于 API。这样老版本浏览器缓存的 Basic 凭据不会绕过登录页，「退出登录」也才能真正生效；代价是 `curl -u ... /` 抓首页会拿到 302，抓页面请用会话 Cookie。
+
+无需认证：`/login`、`/login.html`、`/api/login`、`/api/session`、`/api/ping`、`/manifest.webmanifest`、`/icon-192.png`、`/icon-512.png`、`/favicon.ico`。
+
+所有写操作（POST，含 `/api/login`）必须带：
 
 ```text
 X-Requested-With: phonebox
 Content-Type: application/json
 ```
 
-这是最低限度的 CSRF 防护；面板页面会自动带上。
+这是最低限度的 CSRF 防护；面板与登录页会自动带上。
+
+## 认证与登录
+
+### `GET /login`
+
+独立登录页（单文件 HTML，无外链）。已登录时 302 回面板；`?next=` 只接受站内绝对路径，登录后回到该地址，可带 URL hash 以恢复原标签页。`&expired=1` 会显示「登录状态已过期」提示。
+
+### `POST /api/login`
+
+```json
+{"user":"admin","pass":"App 首页显示的密码"}
+```
+
+成功返回 `{"ok":true}`，并下发：
+
+```text
+Set-Cookie: phonebox_sid=<64 位随机串>; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax
+```
+
+Cookie 是 `HttpOnly`（JS 读不到）、`SameSite=Lax`（配合 `X-Requested-With` 防 CSRF）。面板走明文 HTTP，因此**不加 Secure**，否则浏览器不会保存；请只在可信网络登录，公网访问建议加 HTTPS 反代。会话只存在应用进程内存：7 天绝对过期、24 小时无操作过期，App 重启后全部失效；修改账号或密码会让已有会话立即失效。
+
+失败返回 401 `{"error":"账号或密码错误"}`。同一 IP 连续 5 次失败会锁定 60 秒，锁定期间返回 429 并带 `Retry-After`。
+
+```sh
+curl -c /tmp/phonebox.cookie -H 'X-Requested-With: phonebox' \
+     -H 'Content-Type: application/json' \
+     -d '{"user":"admin","pass":"随机密码"}' \
+     http://192.168.1.23:8080/api/login
+curl -b /tmp/phonebox.cookie http://192.168.1.23:8080/api/status
+```
+
+### `GET /api/session`
+
+无需认证，供页面判断登录态：
+
+```json
+{"authed":true,"session":true}
+```
+
+`authed` 表示当前请求通过了任意一种认证（含 Basic / Bearer），`session` 只表示 Cookie 会话有效。
+
+### `POST /api/logout`
+
+需要认证。销毁当前会话并下发清除 Cookie 的 `Set-Cookie`，返回 `{"ok":true}`。面板右上角「退出」按钮调用它。
 
 ## 公共
 

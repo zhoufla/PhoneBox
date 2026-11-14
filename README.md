@@ -8,6 +8,7 @@
 - Cloudflare DDNS（WiFi 下 IPv6 直连优先）
 - 测试事件、异常告警（本地通知，可选外推到指定通道）
 - 面板支持「添加到主屏幕」（PWA-lite：图标、主题色、独立窗口）
+- 面板独立登录页：表单会话 Cookie，取代浏览器原生认证弹窗；Basic / Bearer 仍可用于脚本
 - App 只做启动器和状态页，配置全部在网页完成
 
 项目参考 [msm8916-box](https://github.com/zhoufla/msm8916-box) 的数据层、规则引擎和内嵌 Web 面板，
@@ -171,7 +172,7 @@ adb shell am start -n com.zhoufla.phonebox/.MainActivity
 2. 点击「电池优化」，选择「不限制」。
 3. 点击「MIUI 自启动」，在系统页面打开自启动；再到「省电策略」选择「无限制」。
 4. 在最近任务里把 PhoneBox **锁定**，避免一键清理。
-5. App 首页会显示面板地址和随机密码，用同一 WiFi 下的电脑浏览器打开。
+5. App 首页会显示面板地址和随机密码，用同一 WiFi 下的电脑浏览器打开，在登录页输入账号 `admin` 和该密码。
 
 ## 面板地址
 
@@ -182,15 +183,22 @@ http://192.168.x.x:8080
 http://[240e:...]:8080
 ```
 
-手机本机打开用 `http://127.0.0.1:8080`。默认账号 `admin`，密码在首次启动时随机生成，
-保存在应用内部 `files/config.json`，App 首页可查看。也可以通过 Bearer Token 调 API：
+手机本机打开用 `http://127.0.0.1:8080`。浏览器打开面板地址会先进入独立登录页 `/login`，默认账号 `admin`，密码在首次启动时随机生成，保存在应用内部 `files/config.json`，App 首页可查看。
+
+登录成功后服务端下发 `phonebox_sid` 会话 Cookie（`HttpOnly`、`SameSite=Lax`），会话只存在进程内存：7 天绝对过期、24 小时无操作过期，App 重启、改账号/密码或点右上角「退出」都会让它失效。连续 5 次密码错误会锁定该来源 60 秒。面板与登录页都是单文件、零外链。
+
+脚本仍可用 Basic 或 Bearer Token 调 API，行为不变（页面本身只认会话 Cookie，避免旧浏览器缓存的 Basic 凭据绕过登录页或让「退出」失效）：
 
 ```sh
+curl -u admin:<密码> http://192.168.x.x:8080/api/status
 curl -H "Authorization: Bearer <token>" http://192.168.x.x:8080/api/status
+# 也可以走表单登录拿 Cookie，见 docs/API.md
+curl -c /tmp/pb.cookie -H 'X-Requested-With: phonebox' \
+     -H 'Content-Type: application/json' \
+     -d '{"user":"admin","pass":"<密码>"}' http://192.168.x.x:8080/api/login
 ```
 
-> 面板默认是 HTTP，且会监听局域网/公网 IPv6。不要把密码或 Token 截图发出去；需要公网访问时
-> 先阅读 [`docs/MIUI-KEEPALIVE.md`](docs/MIUI-KEEPALIVE.md) 和 DDNS 的安全说明。
+> 面板默认是 HTTP，且会监听局域网/公网 IPv6，会话 Cookie 因此不带 `Secure`（否则浏览器不会保存）。不要把密码或 Token 截图发出去；需要公网访问时先加 HTTPS 反代，并阅读 [`docs/MIUI-KEEPALIVE.md`](docs/MIUI-KEEPALIVE.md) 和 DDNS 的安全说明。
 
 ## 转发通道
 
@@ -217,6 +225,7 @@ phone-box/
 ├── AndroidManifest.xml
 ├── build.sh
 ├── assets/web/index.html
+├── assets/web/login.html
 ├── config/config.example.json
 ├── res/drawable/ic_launcher.xml
 ├── src/com/zhoufla/phonebox/
@@ -244,6 +253,7 @@ phone-box/
 │   ├── Sender.java
 │   ├── AppConfig.java
 │   ├── Auth.java
+│   ├── WebSession.java
 │   ├── Http.java
 │   ├── WebPanel.java
 │   ├── NetInfo.java

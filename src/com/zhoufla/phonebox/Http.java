@@ -31,6 +31,8 @@ public final class Http {
         public String path = "/";
         public String rawQuery = "";
         public String body = "";
+        /** 对端 IP，仅用于登录失败限流，不写日志、不外传。 */
+        public String remoteAddr = "";
         /** 二进制上传已落盘的临时文件；非 null 时 body 为空，用完后由 Http 兜底删除。 */
         public File uploadFile;
         public long uploadBytes = 0;
@@ -190,6 +192,9 @@ public final class Http {
 
             req = new Req();
             req.method = parts[0];
+            if (socket.getInetAddress() != null) {
+                req.remoteAddr = socket.getInetAddress().getHostAddress();
+            }
             String target = parts[1];
             int q = target.indexOf('?');
             req.path = q >= 0 ? target.substring(0, q) : target;
@@ -392,6 +397,8 @@ public final class Http {
                 return "OK";
             case 204:
                 return "No Content";
+            case 302:
+                return "Found";
             case 400:
                 return "Bad Request";
             case 401:
@@ -404,6 +411,8 @@ public final class Http {
                 return "Method Not Allowed";
             case 413:
                 return "Payload Too Large";
+            case 429:
+                return "Too Many Requests";
             case 500:
                 return "Internal Server Error";
             default:

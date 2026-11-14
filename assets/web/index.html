@@ -179,7 +179,10 @@
       <h1>PhoneBox</h1>
       <div class="sub">无 root 短信网关 · 设备面板</div>
     </div>
-    <div class="pill"><span id="conn" class="dot"></span><span id="connText">连接中</span></div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="pill"><span id="conn" class="dot"></span><span id="connText">连接中</span></div>
+      <button class="small" id="logout" type="button" title="退出登录" style="margin-top:0;white-space:nowrap;">退出</button>
+    </div>
   </header>
 
   <nav class="tabs">
@@ -634,6 +637,12 @@
     $("connText").textContent = text;
   }
 
+  /** 会话失效时带上当前标签页（URL hash），登录后回到原位置。 */
+  function goLogin() {
+    var next = location.pathname + location.search + location.hash;
+    location.replace("/login?next=" + encodeURIComponent(next) + "&expired=1");
+  }
+
   function api(path, opts) {
     opts = opts || {};
     var init = { cache: "no-store", credentials: "same-origin", headers: {} };
@@ -647,7 +656,7 @@
       return res.text().then(function (text) {
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { error: text }; }
-        if (res.status === 401) { throw new Error("认证失败，请刷新页面重新登录"); }
+        if (res.status === 401) { goLogin(); throw new Error("登录状态已失效，正在跳转登录页"); }
         if (!res.ok) { throw new Error(data.error || ("HTTP " + res.status)); }
         return data;
       });
@@ -1457,7 +1466,7 @@
         var data = {};
         try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
         catch (err) { data = { error: xhr.responseText }; }
-        if (xhr.status === 401) { reject(new Error("认证失败，请刷新页面重新登录")); return; }
+        if (xhr.status === 401) { goLogin(); reject(new Error("登录状态已失效")); return; }
         if (xhr.status < 200 || xhr.status >= 300) {
           reject(new Error(data.error || ("HTTP " + xhr.status)));
           return;
@@ -1891,6 +1900,14 @@
     else state.channels.push(ch);
     $("chDialog").close();
     saveChannels();
+  });
+
+  $("logout").addEventListener("click", function () {
+    api("/api/logout", { method: "POST" }).then(function () {
+      location.replace("/login");
+    }).catch(function (e) {
+      showError("退出失败：" + e.message);
+    });
   });
 
   // 启动

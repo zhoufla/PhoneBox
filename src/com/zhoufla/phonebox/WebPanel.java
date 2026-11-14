@@ -124,6 +124,9 @@ public final class WebPanel {
     // ---------- 路由 ----------
 
     private static Http.Resp route(Context ctx, AppConfig cfg, Http.Req req) {
+        boolean get = "GET".equals(req.method);
+        boolean post = "POST".equals(req.method);
+
         if ("/api/ping".equals(req.path)) {
             return Http.Resp.json(200, "{\"ok\":true,\"app\":\"phonebox\"}");
         }
@@ -131,22 +134,53 @@ public final class WebPanel {
             return Http.Resp.text(204, "");
         }
         // PWA 静态资源不含敏感数据，放在鉴权之前，浏览器拉 manifest/图标时不会 401。
-        if ("GET".equals(req.method) && "/manifest.webmanifest".equals(req.path)) {
+        if (get && "/manifest.webmanifest".equals(req.path)) {
             return staticAsset(ctx, "web/manifest.webmanifest",
                     "application/manifest+json; charset=utf-8");
         }
-        if ("GET".equals(req.method) && ("/icon-192.png".equals(req.path)
+        if (get && ("/icon-192.png".equals(req.path)
                 || "/icon-512.png".equals(req.path))) {
             return staticAsset(ctx, "web" + req.path, "image/png");
         }
-        if (!Auth.ok(req, cfg)) {
-            return Auth.unauthorized();
+
+        if (post && "/api/login".equals(req.path)) {
+            return login(cfg, req);
+        }
+        if (get && "/api/session".equals(req.path)) {
+            JSONObject o = new JSONObject();
+            try {
+                o.put("authed", Auth.ok(req, cfg));
+                o.put("session", WebSession.valid(req, cfg));
+            } catch (JSONException ignored) {
+            }
+            return Http.Resp.json(200, o.toString());
         }
 
-        boolean get = "GET".equals(req.method);
-        boolean post = "POST".equals(req.method);
-
-        if (get && ("/".equals(req.path) || "/index.html".equals(req.path))) {
+        // 页面只认会话 Cookie：浏览器缓存的旧 Basic 凭据不会绕过登录页，「退出登录」也才有效。
+        // API 由下面的 Auth.ok 继续接受 Basic / Bearer，脚本用法不变。
+        boolean isPage = get && ("/".equals(req.path) || "/index.html".equals(req.path)
+                || "/login".equals(req.path) || "/login.html".equals(req.path));
+        if (isPage) {
+            boolean loggedIn = WebSession.valid(req, cfg);
+            if ("/login".equals(req.path) || "/login.html".equals(req.path)) {
+                if (loggedIn) {
+                    return redirect(safeNext(req.q("next", "/")));
+                }
+                try {
+                    return Http.Resp.bytes(200, "text/html; charset=utf-8",
+                            asset(ctx, "web/login.html"));
+                } catch (IOException e) {
+                    return Http.Resp.text(500, "登录页资源缺失：" + e.getMessage());
+                }
+            }
+            if (!loggedIn) {
+                String next = "/" + (req.rawQuery.isEmpty() ? "" : "?" + req.rawQuery);
+                try {
+                    return redirect("/login?next=" + URLEncoder.encode(next, "UTF-8"));
+                } catch (Exception e) {
+                    return redirect("/login");
+                }
+            }
             try {
                 return Http.Resp.bytes(200, "text/html; charset=utf-8",
                         asset(ctx, "web/index.html"));
@@ -155,11 +189,18 @@ public final class WebPanel {
             }
         }
 
+        if (!Auth.ok(req, cfg)) {
+            return Auth.unauthorized();
+        }
+
         if (!get && !post) {
             return err(405, "method not allowed");
         }
         if (post && !"phonebox".equals(req.header("x-requested-with"))) {
             return err(403, "缺少 X-Requested-With: phonebox");
+        }
+        if (post && "/api/logout".equals(req.path)) {
+            return logout(req);
         }
 
         try {
@@ -304,6 +345,65 @@ public final class WebPanel {
         }
 
         return err(404, "not found");
+    }
+
+    // ---------- 登录与会话 ----------
+
+    private static Http.Resp login(AppConfig cfg, Http.Req req) {
+        if (!"phonebox".equals(req.header("x-requested-with"))) {
+            return err(403, "缺少 X-Requested-With: phonebox");
+        }
+        long wait = WebSession.lockRemaining(req.remoteAddr);
+        if (wait > 0) {
+            Http.Resp r = err(429, "尝试过于频繁，请 " + wait + " 秒后重试");
+            r.headers.put("Retry-After", String.valueOf(wait));
+            return r;
+        }
+        String user;
+        String pass;
+        try {
+            JSONObject body = new JSONObject(req.body);
+            user = body.optString("user", "");
+            pass = body.optString("pass", "");
+        } catch (JSONException e) {
+            return err(400, "JSON 无效：" + e.getMessage());
+        }
+        String sid = WebSession.login(user, pass, req.remoteAddr, cfg);
+        if (sid == null) {
+            return err(401, "账号或密码错误");
+        }
+        Logs.add("面板登录成功：" + user + "（" + req.remoteAddr + "）");
+        Http.Resp r = Http.Resp.json(200, "{\"ok\":true}");
+        r.headers.put("Set-Cookie", WebSession.setCookie(sid));
+        return r;
+    }
+
+    private static Http.Resp logout(Http.Req req) {
+        WebSession.logout(req);
+        Http.Resp r = Http.Resp.json(200, "{\"ok\":true}");
+        r.headers.put("Set-Cookie", WebSession.clearCookie());
+        return r;
+    }
+
+    private static Http.Resp redirect(String location) {
+        Http.Resp r = Http.Resp.text(302, "");
+        r.headers.put("Location", location);
+        return r;
+    }
+
+    /** 只接受站内绝对路径，防止通过 next 做开放重定向或注入响应头。 */
+    private static String safeNext(String raw) {
+        String s = raw == null ? "" : raw.trim();
+        if (!s.startsWith("/") || s.startsWith("//") || s.length() > 256) {
+            return "/";
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < 32 || c == 127 || c == '\\') {
+                return "/";
+            }
+        }
+        return s;
     }
 
     // ---------- 接口实现 ----------

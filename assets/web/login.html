@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>登录 · PhoneBox</title>
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --line: #262d38;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --blue: #58a6ff;
+    --amber: #d29922;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 16px
+             calc(24px + env(safe-area-inset-bottom, 0px));
+    background-image: radial-gradient(900px 480px at 50% -10%, rgba(88, 166, 255, .08), transparent 70%);
+  }
+  .box { width: 100%; max-width: 380px; }
+  .brand { text-align: center; margin-bottom: 22px; }
+  .brand img { width: 58px; height: 58px; border-radius: 14px; display: block; margin: 0 auto 12px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  .sub { margin-top: 5px; color: var(--muted); font-size: 13px; }
+  .card {
+    padding: 22px 20px 20px; border: 1px solid var(--line); border-radius: 16px;
+    background: var(--card); box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+  }
+  label { display: block; margin-top: 14px; color: var(--muted); font-size: 12px; }
+  label:first-of-type { margin-top: 0; }
+  input {
+    width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: #0f141c; color: var(--text);
+    font: inherit; font-size: 15px; outline: none;
+  }
+  input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(88, 166, 255, .13); }
+  input:-webkit-autofill { -webkit-text-fill-color: var(--text); }
+  .pass { position: relative; display: block; }
+  .pass input { padding-right: 62px; }
+  .pass button {
+    position: absolute; right: 6px; bottom: 6px; margin: 0; padding: 4px 8px;
+    border: 0; background: transparent; color: var(--muted); font-size: 12px;
+    border-radius: 6px; cursor: pointer;
+  }
+  .pass button:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+  .msg {
+    display: none; margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+    font-size: 13px; word-break: break-word;
+  }
+  .msg.show { display: block; }
+  .msg.err { background: rgba(248, 81, 73, .12); border: 1px solid rgba(248, 81, 73, .35); color: #ffb4ae; }
+  .msg.hint { background: rgba(210, 153, 34, .1); border: 1px solid rgba(210, 153, 34, .3); color: #e3c07b; }
+  button.primary {
+    width: 100%; margin-top: 20px; padding: 11px 13px; font-size: 15px; font-weight: 600;
+    appearance: none; border: 1px solid #1f6feb; border-radius: 9px;
+    background: #1f6feb; color: #fff; cursor: pointer;
+  }
+  button.primary:hover:not(:disabled) { background: #2a7cf5; }
+  button.primary:disabled { opacity: .6; cursor: default; }
+  .foot { margin-top: 18px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  .foot b { color: #c9d1d9; font-weight: 500; }
+  @media (max-width: 400px) {
+    .card { padding: 18px 16px; }
+    input { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="brand">
+    <img src="/icon-192.png" alt="PhoneBox">
+    <h1>PhoneBox</h1>
+    <div class="sub">登录设备面板</div>
+  </div>
+
+  <form class="card" id="form" autocomplete="on">
+    <label for="user">账号
+      <input id="user" name="username" type="text" value="admin" autocomplete="username"
+             autocapitalize="off" autocorrect="off" spellcheck="false" required>
+    </label>
+    <label for="pass">密码
+      <span class="pass">
+        <input id="pass" name="password" type="password" autocomplete="current-password"
+               placeholder="请输入面板密码" required>
+        <button type="button" id="toggle" aria-label="显示密码">显示</button>
+      </span>
+    </label>
+
+    <div id="msg" class="msg" role="alert" aria-live="polite"></div>
+    <button class="primary" id="submit" type="submit">登录</button>
+  </form>
+
+  <div class="foot">
+    密码在 <b>PhoneBox App 首页</b> 查看，首次启动时随机生成。<br>
+    会话保留 7 天；改密码、退出登录或重启应用后需重新登录。<br>
+    面板默认使用明文 HTTP，请仅在可信网络登录。
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+
+  function safeNext(value) {
+    if (!value || value.charAt(0) !== "/" || value.slice(0, 2) === "//") return "/";
+    if (/[\\\r\n]/.test(value) || value.length > 256) return "/";
+    return value;
+  }
+  var next = safeNext(params.get("next"));
+
+  function show(kind, text) {
+    var box = $("msg");
+    box.className = "msg show " + kind;
+    box.textContent = text;
+  }
+  function clearMsg() { $("msg").className = "msg"; $("msg").textContent = ""; }
+
+  if (params.get("expired") === "1") {
+    show("hint", "登录状态已过期，请重新输入密码。");
+  }
+
+  try {
+    var saved = localStorage.getItem("phonebox-user");
+    if (saved) $("user").value = saved;
+  } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+
+  $("toggle").addEventListener("click", function () {
+    var input = $("pass");
+    var toText = input.type === "password";
+    input.type = toText ? "text" : "password";
+    $("toggle").textContent = toText ? "隐藏" : "显示";
+    $("toggle").setAttribute("aria-label", toText ? "隐藏密码" : "显示密码");
+    input.focus();
+  });
+
+  $("form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    clearMsg();
+    var user = $("user").value.trim();
+    var pass = $("pass").value;
+    if (!user || !pass) { show("err", "请填写账号和密码"); return; }
+
+    var btn = $("submit");
+    btn.disabled = true;
+    btn.textContent = "登录中…";
+    fetch("/api/login", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        "X-Requested-With": "phonebox",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ user: user, pass: pass })
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { error: text }; }
+        if (res.status === 401) throw new Error("账号或密码错误");
+        if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+        return data;
+      });
+    }).then(function () {
+      try { localStorage.setItem("phonebox-user", user); } catch (e) {}
+      location.replace(next);
+    }).catch(function (e) {
+      show("err", e.message || "登录失败，请检查面板是否在运行");
+      $("pass").value = "";
+      $("pass").focus();
+      btn.disabled = false;
+      btn.textContent = "登录";
+    });
+  });
+
+  // 用户名已预填时直接聚焦密码，少一步操作。
+  if ($("user").value) $("pass").focus();
+})();
+</script>
+</body>
+</html>

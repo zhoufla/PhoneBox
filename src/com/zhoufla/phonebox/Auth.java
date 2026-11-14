@@ -4,7 +4,12 @@ import android.util.Base64;
 
 import java.nio.charset.StandardCharsets;
 
-/** 面板认证：HTTP Basic 或 Bearer Token。恒时比较，避免明显的时序侧信道。 */
+/**
+ * 面板认证：网页表单会话 Cookie、HTTP Basic 或 Bearer Token。恒时比较，避免明显的时序侧信道。
+ *
+ * 这里不再下发 WWW-Authenticate：浏览器不会弹原生 Basic 对话框，未登录的页面请求由
+ * WebPanel 302 到独立登录页 /login。脚本主动发送 Basic / Bearer 头仍然照常可用。
+ */
 public final class Auth {
 
     private Auth() {
@@ -12,46 +17,48 @@ public final class Auth {
 
     public static boolean ok(Http.Req req, AppConfig cfg) {
         String header = req.header("authorization");
-        if (header == null) {
-            return false;
-        }
-        if (header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            String expected = cfg.webToken();
-            if (expected.isEmpty()) {
-                return false;
-            }
-            return constantTimeEquals(header.substring(7).trim(), expected);
-        }
-        if (header.regionMatches(true, 0, "Basic ", 0, 6)) {
-            String expectedPass = cfg.webPass();
-            if (expectedPass.isEmpty()) {
-                return false;
-            }
-            try {
-                byte[] raw = Base64.decode(header.substring(6).trim(), Base64.DEFAULT);
-                String decoded = new String(raw, StandardCharsets.UTF_8);
-                int colon = decoded.indexOf(':');
-                if (colon < 0) {
-                    return false;
+        if (header != null) {
+            if (header.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                String expected = cfg.webToken();
+                if (!expected.isEmpty()
+                        && constantTimeEquals(header.substring(7).trim(), expected)) {
+                    return true;
                 }
-                String user = decoded.substring(0, colon);
-                String pass = decoded.substring(colon + 1);
-                return constantTimeEquals(user, cfg.webUser())
-                        && constantTimeEquals(pass, expectedPass);
-            } catch (IllegalArgumentException e) {
-                return false;
+            } else if (header.regionMatches(true, 0, "Basic ", 0, 6)) {
+                String expectedPass = cfg.webPass();
+                if (!expectedPass.isEmpty()) {
+                    try {
+                        byte[] raw = Base64.decode(header.substring(6).trim(), Base64.DEFAULT);
+                        String decoded = new String(raw, StandardCharsets.UTF_8);
+                        int colon = decoded.indexOf(':');
+                        if (colon >= 0
+                                && constantTimeEquals(decoded.substring(0, colon), cfg.webUser())
+                                && constantTimeEquals(decoded.substring(colon + 1), expectedPass)) {
+                            return true;
+                        }
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
             }
         }
-        return false;
+        // 头缺失或凭据不对（例如改过密码后浏览器还缓存着旧 Basic）时，仍允许有效会话登录。
+        return WebSession.valid(req, cfg);
     }
 
+    /** 表单登录用的账号密码校验。 */
+    public static boolean credentials(String user, String pass, AppConfig cfg) {
+        String expected = cfg.webPass();
+        return user != null && pass != null && !expected.isEmpty()
+                && constantTimeEquals(user, cfg.webUser())
+                && constantTimeEquals(pass, expected);
+    }
+
+    /** 纯 401，不带 WWW-Authenticate，避免浏览器弹出原生认证框。 */
     public static Http.Resp unauthorized() {
-        Http.Resp resp = Http.Resp.json(401, "{\"error\":\"unauthorized\"}");
-        resp.headers.put("WWW-Authenticate", "Basic realm=\"PhoneBox\", charset=\"UTF-8\"");
-        return resp;
+        return Http.Resp.json(401, "{\"error\":\"unauthorized\"}");
     }
 
-    private static boolean constantTimeEquals(String a, String b) {
+    static boolean constantTimeEquals(String a, String b) {
         if (a == null || b == null) {
             return false;
         }

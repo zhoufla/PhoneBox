@@ -49,14 +49,19 @@ jobs:
           python3 -m json.tool config/config.example.json >/dev/null
           python3 -m json.tool assets/web/manifest.webmanifest >/dev/null
           python3 - <<'PY'
-          import re
-          s = open('assets/web/index.html', encoding='utf-8').read()
-          blocks = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', s, re.S)
-          if not blocks:
-              raise SystemExit('面板没有内联脚本')
-          open('/tmp/panel.js', 'w', encoding='utf-8').write(blocks[0])
+          import pathlib, re
+          for page in ('index.html', 'login.html'):
+              path = pathlib.Path('assets/web') / page
+              s = path.read_text(encoding='utf-8')
+              blocks = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', s, re.S)
+              if not blocks:
+                  raise SystemExit(f'{page} 没有内联脚本')
+              for i, block in enumerate(blocks):
+                  out = pathlib.Path('/tmp') / f'panel-{path.stem}-{i}.js'
+                  out.write_text(block, encoding='utf-8')
+                  print(out)
           PY
-          node --check /tmp/panel.js
+          for f in /tmp/panel-*.js; do node --check "$f"; done
 
       - name: 准备 Android SDK
         run: |

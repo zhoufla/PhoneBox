@@ -24,6 +24,65 @@ if [ "$CODE" != "401" ]; then
 fi
 echo "OK 401"
 
+echo "== 未认证访问首页应 302 到登录页"
+curl -s -o /dev/null -D - "$BASE/" | grep -qi '^Location: /login' || {
+    echo "错误：未认证首页没有跳转到 /login" >&2
+    exit 1
+}
+echo "OK 302 /login"
+
+echo "== 登录页（无需认证）"
+curl -fsS "$BASE/login" | grep -q '登录设备面板' || {
+    echo "错误：登录页内容异常" >&2
+    exit 1
+}
+echo "OK /login"
+
+echo "== 表单登录：错误密码应为 401"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" -H 'Content-Type: application/json' \
+    -d '{"user":"admin","pass":"definitely-wrong"}' "$BASE/api/login")
+if [ "$CODE" != "401" ]; then
+    echo "错误：错误密码返回 $CODE，期望 401" >&2
+    exit 1
+fi
+echo "OK 401"
+
+USER="${AUTH%%:*}"
+PASS="${AUTH#*:}"
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
+echo "== 表单登录：正确密码 → 会话 Cookie"
+curl -fsS -c "$COOKIE_JAR" -H "$H" -H 'Content-Type: application/json' \
+    -d "{\"user\":\"$USER\",\"pass\":\"$PASS\"}" "$BASE/api/login"
+echo
+
+echo "== 会话状态"
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/session"
+echo
+
+echo "== Cookie 可访问需要认证的接口"
+curl -fsS -b "$COOKIE_JAR" "$BASE/api/health"
+echo
+
+echo "== 带会话 Cookie 的首页"
+curl -fsS -b "$COOKIE_JAR" "$BASE/" | grep -q 'class="tabs"' || {
+    echo "错误：带会话 Cookie 没有拿到面板首页" >&2
+    exit 1
+}
+echo "OK /"
+
+echo "== 退出登录后 Cookie 失效"
+curl -fsS -b "$COOKIE_JAR" -H "$H" -H 'Content-Type: application/json' \
+    -d '{}' "$BASE/api/logout"
+echo
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" "$BASE/api/status")
+if [ "$CODE" != "401" ]; then
+    echo "错误：退出后请求返回 $CODE，期望 401" >&2
+    exit 1
+fi
+echo "OK 401"
+
 echo "== health"
 curl -fsS -u "$AUTH" "$BASE/api/health"
 echo
@@ -54,8 +113,13 @@ echo "== logs"
 curl -fsS -u "$AUTH" "$BASE/api/logs?limit=20"
 echo
 
-echo "== index"
-curl -fsS -u "$AUTH" "$BASE/" | head -5
+echo "== index（Basic 不直接放行页面，应跳登录页）"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "$BASE/")
+if [ "$CODE" != "302" ]; then
+    echo "错误：Basic 抓首页返回 $CODE，期望 302" >&2
+    exit 1
+fi
+echo "OK 302 /login"
 
 echo "== 双卡号码（status.sims）"
 curl -fsS -u "$AUTH" "$BASE/api/status" | python3 -c \
